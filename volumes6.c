@@ -70,6 +70,7 @@ void sendSerialNewLine(struct IOExtSer*);
 // Serial functions
 void Amiga_Store_Data(struct IOExtSer*);
 void Amiga_Create_Empty_File(struct IOExtSer*);
+void Amiga_Create_Empty_Drawer(struct IOExtSer*);
 void Amiga_Send_vols(struct IOExtSer*);
 void Amiga_Send_List(struct IOExtSer*,char*);
 void Serial_Amiga_Send_Stat(struct IOExtSer*,char*);
@@ -293,6 +294,10 @@ int main(int argc,char** argv)
 						else if (SerialReadBuffer[0]=='c' && SerialReadBuffer[1]=='r' && SerialReadBuffer[2]=='e' && SerialReadBuffer[3]=='a' && SerialReadBuffer[4]=='t' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]=='f' && SerialReadBuffer[7]=='i' && SerialReadBuffer[8]=='l' && SerialReadBuffer[9]=='e' && SerialReadBuffer[10]==4)
 						{
 							Amiga_Create_Empty_File(SerialIO);
+						}
+						else if (SerialReadBuffer[0]=='m' && SerialReadBuffer[1]=='k' && SerialReadBuffer[2]=='d' && SerialReadBuffer[3]=='r' && SerialReadBuffer[4]=='a' && SerialReadBuffer[5]=='w' && SerialReadBuffer[6]=='e' && SerialReadBuffer[7]=='r' && SerialReadBuffer[8]==4)
+						{
+							Amiga_Create_Empty_Drawer(SerialIO);
 						}
 						else if (SerialReadBuffer[0]=='e' && SerialReadBuffer[1]=='x' && SerialReadBuffer[2]=='i' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 							terminate = 1;
@@ -539,6 +544,49 @@ void Amiga_Send_vols(struct IOExtSer* SerialIO)
 	return ;
 }
 
+// Create an empty drawer
+void Amiga_Create_Empty_Drawer(struct IOExtSer* SerialIO)
+{
+		BPTR lock;
+		char FilenameReadBuffer[READ_BUFFER_SIZE];
+		int cont;
+		
+		/* Init buffer with zeroes */
+		for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+		{
+			FilenameReadBuffer[cont]=0;
+		}
+		sendSerialMessage(SerialIO,"1","Getting filename");
+		sendSerialEndOfData(SerialIO);
+
+		// Read filename from serial port
+		SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
+		SerialIO->IOSer.io_Command  = CMD_READ;
+		SerialIO->IOSer.io_Data     = (APTR)&FilenameReadBuffer[0];
+		DoIO((struct IORequest *)SerialIO);
+			printf("Received : ##%s##\n",FilenameReadBuffer);
+	
+		for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+		{
+			if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file\n");}
+		}
+		
+		lock = CreateDir (FilenameReadBuffer);
+		if (!lock)
+		{
+			printf("Error in creating %s\n",FilenameReadBuffer);
+			sendSerialMessage(SerialIO,"KO","KO");
+		}
+		else
+		{
+			UnLock(lock);
+			sendSerialMessage(SerialIO,"OK","OK");
+		}
+		sendSerialEndOfData(SerialIO);
+		return ;
+}
+
+// Create an empty file
 void Amiga_Create_Empty_File(struct IOExtSer* SerialIO)
 {
 	char FilenameReadBuffer[READ_BUFFER_SIZE];
