@@ -29,7 +29,8 @@
 
 
 #define READ_BUFFER_SIZE 256
-#define CHUNK_DATA_READ 256 // Chunk of bytes read from serial interface while file transfer
+//#define CHUNK_DATA_READ 256 // Chunk of bytes read from serial interface while file transfer
+#define CHUNK_DATA_READ 256
 
 struct VolumeInfo
 {
@@ -67,6 +68,8 @@ void sendSerialEndOfData(struct IOExtSer*);
 void sendSerialNewLine(struct IOExtSer*);
 
 // Serial functions
+void Amiga_Store_Data(struct IOExtSer*);
+void Amiga_Create_Empty_File(struct IOExtSer*);
 void Amiga_Send_vols(struct IOExtSer*);
 void Amiga_Send_List(struct IOExtSer*,char*);
 void Serial_Amiga_Send_Stat(struct IOExtSer*,char*);
@@ -238,7 +241,7 @@ int main(int argc,char** argv)
 							
 							for (cont=0;cont<READ_BUFFER_SIZE;cont++)
 							{
-								if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file");}
+								if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file\n");}
 								
 							}
 
@@ -281,6 +284,15 @@ int main(int argc,char** argv)
 					 			printf("Set Params failed ");   /* Inform user of error */
 
 
+						}
+						else if (SerialReadBuffer[0]=='s' && SerialReadBuffer[1]=='t' && SerialReadBuffer[2]=='o' && SerialReadBuffer[3]=='r' && SerialReadBuffer[4]=='e' && SerialReadBuffer[5]=='r' && SerialReadBuffer[6]=='a' && SerialReadBuffer[7]=='w' && SerialReadBuffer[8]==4)
+						{
+							Amiga_Store_Data(SerialIO);	
+						}
+						// Create empty file
+						else if (SerialReadBuffer[0]=='c' && SerialReadBuffer[1]=='r' && SerialReadBuffer[2]=='e' && SerialReadBuffer[3]=='a' && SerialReadBuffer[4]=='t' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]=='f' && SerialReadBuffer[7]=='i' && SerialReadBuffer[8]=='l' && SerialReadBuffer[9]=='e' && SerialReadBuffer[10]==4)
+						{
+							Amiga_Create_Empty_File(SerialIO);
 						}
 						else if (SerialReadBuffer[0]=='e' && SerialReadBuffer[1]=='x' && SerialReadBuffer[2]=='i' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 							terminate = 1;
@@ -357,6 +369,11 @@ struct Amiga_Stat* Amiga_Get_Stat(char* path)
 	struct FileInfoBlock * FIB;
 	BPTR lock;
 	lock = Lock(path, ACCESS_READ);
+	if (!lock)
+	{
+		if (VERBOSE) printf("File %s not readable\n",path);
+		return NULL;
+	}
 	FIB = AllocVec(sizeof(struct FileInfoBlock), MEMF_CLEAR);
 	if (FIB)
 	{
@@ -522,6 +539,168 @@ void Amiga_Send_vols(struct IOExtSer* SerialIO)
 	return ;
 }
 
+void Amiga_Create_Empty_File(struct IOExtSer* SerialIO)
+{
+	char FilenameReadBuffer[READ_BUFFER_SIZE];
+	FILE* fh;
+	int cont;
+	
+	/* Init buffer with zeroes */
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		FilenameReadBuffer[cont]=0;
+	}
+	sendSerialMessage(SerialIO,"1","Getting filename");
+	sendSerialEndOfData(SerialIO);
+
+	// Read filename from serial port
+	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
+	SerialIO->IOSer.io_Command  = CMD_READ;
+	SerialIO->IOSer.io_Data     = (APTR)&FilenameReadBuffer[0];
+	DoIO((struct IORequest *)SerialIO);
+	printf("Received : ##%s##\n",FilenameReadBuffer);
+	
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file\n");}
+	}
+
+	fh = fopen(FilenameReadBuffer, "wb");
+	if (!fh)
+	{
+		printf("Error in writing %s\n",FilenameReadBuffer);
+		sendSerialMessage(SerialIO,"KO","KO");
+	}
+	else
+	{							
+		fclose(fh);
+		sendSerialMessage(SerialIO,"OK","OK");
+	}
+	sendSerialEndOfData(SerialIO);
+	return ;
+}
+
+//Stores binary data to amiga fs
+void Amiga_Store_Data(struct IOExtSer* SerialIO)
+{
+	char FilenameReadBuffer[READ_BUFFER_SIZE];
+	char FilesizeReadBuffer[READ_BUFFER_SIZE];
+	char AppendReadBuffer[READ_BUFFER_SIZE];
+	char DataReadBuffer[CHUNK_DATA_READ];
+	int cont=0;
+	int contBytes = 0;
+	int fileSize = 0;
+	int bytesToRead = 0;
+	FILE* fh;
+
+	struct IOTArray Terminators =
+	{
+		0x04040403,   /*  etx eot */
+		0x03030303    /* fill to end with lowest value */
+	};
+
+	/* Init buffer with zeroes */
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		FilenameReadBuffer[cont]=0;
+		FilesizeReadBuffer[cont]=0;
+		AppendReadBuffer[cont]=0;
+	}
+	sendSerialMessage(SerialIO,"1","Getting filename");
+	sendSerialEndOfData(SerialIO);
+
+	// Read filename from serial port
+	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
+	SerialIO->IOSer.io_Command  = CMD_READ;
+	SerialIO->IOSer.io_Data     = (APTR)&FilenameReadBuffer[0];
+	DoIO((struct IORequest *)SerialIO);
+	if (VERBOSE) printf("Received : ##%s##\n",FilenameReadBuffer);
+
+	// Read filesize from serial port
+	sendSerialMessage(SerialIO,"2","Getting filesize");
+	sendSerialEndOfData(SerialIO);
+
+	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
+	SerialIO->IOSer.io_Command  = CMD_READ;
+	SerialIO->IOSer.io_Data     = (APTR)&FilesizeReadBuffer[0];
+	DoIO((struct IORequest *)SerialIO);
+	if (VERBOSE) printf("Received : ##%s##\n",FilesizeReadBuffer);
+
+	// Read append flag from serial port
+	sendSerialMessage(SerialIO,"3","Getting append flag");
+	sendSerialEndOfData(SerialIO);
+
+	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
+	SerialIO->IOSer.io_Command  = CMD_READ;
+	SerialIO->IOSer.io_Data     = (APTR)&AppendReadBuffer[0];
+	DoIO((struct IORequest *)SerialIO);
+	if (VERBOSE) printf("Received : ##%s##\n",AppendReadBuffer);
+	
+
+	// From now i am listening for incoming data
+	sendSerialMessage(SerialIO,"4","Getting binary data");
+	sendSerialEndOfData(SerialIO);
+
+	// Disable termination mode
+	SerialIO->io_SerFlags &= ~ SERF_EOFMODE;
+	SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
+							
+	if (DoIO((struct IORequest *)SerialIO))
+    	printf("Set Params failed ");   /* Inform user of error */
+
+	SerialIO->IOSer.io_Data     = (APTR)&DataReadBuffer[0];
+	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE;
+	SerialIO->IOSer.io_Command  = CMD_READ;
+
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;if (VERBOSE) printf("corretto il nome del file\n");}
+	}
+
+	if (AppendReadBuffer[0]=='1')
+		fh = fopen(FilenameReadBuffer, "ab");
+	else
+		fh = fopen(FilenameReadBuffer, "wb");
+	if (!fh)
+	{							
+		printf("Error in writing %s\n",FilenameReadBuffer);
+	}
+	else
+	{							
+		fileSize=atoi(FilesizeReadBuffer);
+		contBytes=0;
+							
+		while (contBytes < fileSize )
+		{
+			if (contBytes+CHUNK_DATA_READ<fileSize) bytesToRead=CHUNK_DATA_READ;
+			else bytesToRead=fileSize-contBytes;
+
+			if (VERBOSE) printf("contBytes : %d, fileSize : %d, bytesToRead : %d\n",contBytes,fileSize,bytesToRead);
+			SerialIO->IOSer.io_Length   = bytesToRead;
+			SerialIO->IOSer.io_Data     = (APTR)&DataReadBuffer[0];
+			SerialIO->IOSer.io_Command  = CMD_READ;
+			DoIO((struct IORequest *)SerialIO);
+								
+			if (fh)
+			{
+				fwrite(DataReadBuffer,bytesToRead,1,fh);
+			}
+								
+			contBytes+=bytesToRead;
+		}
+		fclose(fh);
+	}
+	if (VERBOSE) printf("Rimetto a posto il terminator mode\n");
+
+	// Restore termination mode
+	SerialIO->io_SerFlags |= SERF_EOFMODE;
+	SerialIO->io_TermArray = Terminators;
+	SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
+	if (DoIO((struct IORequest *)SerialIO))
+		printf("Set Params failed ");   /* Inform user of error */
+	return ;
+}
+
 // Send the content of a directory via serial cable
 void Amiga_Send_List(struct IOExtSer* SerialIO,char* path)
 {
@@ -571,7 +750,7 @@ void Serial_Amiga_Send_Stat(struct IOExtSer* SerialIO,char* path)
 		sendSerialNewLine(SerialIO);
 		for (cont=0;cont<100;cont++) app[cont]=0;
 		sprintf(app,"%ld",stat->st_blksize);
-		if (VERBOSE) printf("Spedisco %s come blick size\n",app);
+		if (VERBOSE) printf("Spedisco %s come block size\n",app);
 		sendSerialMessage(SerialIO,app,app);
 		sendSerialNewLine(SerialIO);
 		
