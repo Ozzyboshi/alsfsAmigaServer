@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "serialread.h"
+
 
 #define READ_BUFFER_SIZE 256
 //#define CHUNK_DATA_READ 256 // Chunk of bytes read from serial interface while file transfer
@@ -71,11 +73,12 @@ void sendSerialNewLine(struct IOExtSer*);
 void Amiga_Store_Data(struct IOExtSer*);
 void Amiga_Create_Empty_File(struct IOExtSer*);
 void Amiga_Create_Empty_Drawer(struct IOExtSer*);
+void Amiga_Rename_File_Drawer(struct IOExtSer*);
 void Amiga_Send_vols(struct IOExtSer*);
 void Amiga_Send_List(struct IOExtSer*,char*);
 void Serial_Amiga_Send_Stat(struct IOExtSer*,char*);
 
-int VERBOSE=0;
+//int VERBOSE=0;
 
 int main(int argc,char** argv)
 {
@@ -298,6 +301,10 @@ int main(int argc,char** argv)
 						else if (SerialReadBuffer[0]=='m' && SerialReadBuffer[1]=='k' && SerialReadBuffer[2]=='d' && SerialReadBuffer[3]=='r' && SerialReadBuffer[4]=='a' && SerialReadBuffer[5]=='w' && SerialReadBuffer[6]=='e' && SerialReadBuffer[7]=='r' && SerialReadBuffer[8]==4)
 						{
 							Amiga_Create_Empty_Drawer(SerialIO);
+						}
+						else if (SerialReadBuffer[0]=='r' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='n' && SerialReadBuffer[3]=='a' && SerialReadBuffer[4]=='m' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]==4)
+						{
+							Amiga_Rename_File_Drawer(SerialIO);
 						}
 						else if (SerialReadBuffer[0]=='e' && SerialReadBuffer[1]=='x' && SerialReadBuffer[2]=='i' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 							terminate = 1;
@@ -543,6 +550,28 @@ void Amiga_Send_vols(struct IOExtSer* SerialIO)
 
 	return ;
 }
+
+// Rename file or drawer
+void Amiga_Rename_File_Drawer(struct IOExtSer* SerialIO)
+{
+	char FilenameReadBuffer[SERIAL_BUFFER_SIZE];
+	char FilenameReadBuffer2[SERIAL_BUFFER_SIZE];
+	SerialRead(SerialIO,"1","Getting old filename",FilenameReadBuffer);
+	SerialRead(SerialIO,"2","Getting new filename",FilenameReadBuffer2);
+	
+	if (!Rename(FilenameReadBuffer,FilenameReadBuffer2))
+	{
+		fprintf(stderr,"Error in renaming %s\n",FilenameReadBuffer);
+		sendSerialMessage(SerialIO,"KO","KO");
+	}
+	else
+	{
+		sendSerialMessage(SerialIO,"OK","OK");
+	}
+	sendSerialEndOfData(SerialIO);	
+	return ;
+}
+
 
 // Create an empty drawer
 void Amiga_Create_Empty_Drawer(struct IOExtSer* SerialIO)
