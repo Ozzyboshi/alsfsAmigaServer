@@ -28,6 +28,8 @@
 #include <string.h>
 
 #include "serialread.h"
+#include "bde64.h"
+
 
 
 #define READ_BUFFER_SIZE 256
@@ -66,6 +68,8 @@ struct ContentInfo* getContentList(char*);
 struct Amiga_Stat* Amiga_Get_Stat(char*);
 
 void sendSerialMessage(struct IOExtSer*,char*,char*);
+void sendSerialMessage512(struct IOExtSer*,char*,char*);
+
 void sendSerialEndOfData(struct IOExtSer*);
 void sendSerialNewLine(struct IOExtSer*);
 
@@ -77,6 +81,9 @@ void Amiga_Rename_File_Drawer(struct IOExtSer*);
 void Amiga_Send_vols(struct IOExtSer*);
 void Amiga_Send_List(struct IOExtSer*,char*);
 void Serial_Amiga_Send_Stat(struct IOExtSer*,char*);
+void Amiga_Read_File(struct IOExtSer*);
+void Amiga_Delay(struct IOExtSer*);
+
 
 //int VERBOSE=0;
 
@@ -306,6 +313,14 @@ int main(int argc,char** argv)
 						{
 							Amiga_Rename_File_Drawer(SerialIO);
 						}
+						else if (SerialReadBuffer[0]=='r' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='a' && SerialReadBuffer[3]=='d' && SerialReadBuffer[4]=='f' && SerialReadBuffer[5]=='i' && SerialReadBuffer[6]=='l' && SerialReadBuffer[7]=='e' && SerialReadBuffer[8]==4)
+						{
+							Amiga_Read_File(SerialIO);
+						}
+						else if (SerialReadBuffer[0]=='d' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='l' && SerialReadBuffer[3]=='a' && SerialReadBuffer[4]=='y' && SerialReadBuffer[5]==4)
+						{
+							Amiga_Delay(SerialIO);
+						}
 						else if (SerialReadBuffer[0]=='e' && SerialReadBuffer[1]=='x' && SerialReadBuffer[2]=='i' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 							terminate = 1;
 						else
@@ -353,6 +368,27 @@ void sendSerialMessage(struct IOExtSer* SerialIO,char* msg,char* debugMsg)
 	}
 	return ;
 }
+
+void sendSerialMessage512(struct IOExtSer* SerialIO,char* msg,char* debugMsg)
+{
+	char chunk[41];
+	int i=0;
+	
+	//SerialIO->IOSer.io_Data     = (APTR)msg;
+	if (debugMsg && VERBOSE) printf("%s\n",debugMsg);
+	for (i=0;i<=(int)((strlen(msg)-1)/512);i++)
+	{
+		SerialIO->IOSer.io_Length   = -1;
+		SerialIO->IOSer.io_Command  = CMD_WRITE;
+		snprintf(chunk,512,"%s",&msg[i*512]);
+		SerialIO->IOSer.io_Data     = (APTR)chunk;
+		if (DoIO((struct IORequest *)SerialIO))     /* execute write */
+			printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
+
+	}
+	return ;
+}
+
 void sendSerialEndOfData(struct IOExtSer* SerialIO)
 {
 	char buffer[2];
@@ -361,7 +397,7 @@ void sendSerialEndOfData(struct IOExtSer* SerialIO)
 	SerialIO->IOSer.io_Length   = 1;
 	SerialIO->IOSer.io_Command  = CMD_WRITE;
 	SerialIO->IOSer.io_Data     = (APTR)&buffer[0];
-	if (VERBOSE) printf("ETX (end of text) sent");
+	if (VERBOSE) printf("ETX (end of text) sent\n");
 	if (DoIO((struct IORequest *)SerialIO)) printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
 	return ;
 }
@@ -654,6 +690,163 @@ void Amiga_Create_Empty_File(struct IOExtSer* SerialIO)
 		sendSerialMessage(SerialIO,"OK","OK");
 	}
 	sendSerialEndOfData(SerialIO);
+	return ;
+}
+
+void Amiga_Delay(struct IOExtSer* SerialIO)
+{
+	char DelayReadBuffer[SERIAL_BUFFER_SIZE];
+	SerialRead(SerialIO,"1","Delay",DelayReadBuffer);
+	Delay(atoi(DelayReadBuffer));
+	sendSerialMessage(SerialIO,"OK","Delay OK");
+	sendSerialEndOfData(SerialIO);
+	return ;
+}
+
+// Read file from amiga fs
+void Amiga_Read_File(struct IOExtSer* SerialIO)
+{
+	char FilenameReadBuffer[SERIAL_BUFFER_SIZE];
+	char SizeReadBuffer[SERIAL_BUFFER_SIZE];
+	char OffsetReadBuffer[SERIAL_BUFFER_SIZE];
+	char* data;
+	FILE* fh;
+	int size;
+	int offset;
+	u8* base64Data;
+	int fileSize;
+	int contBytes;
+	int bytesToRead;
+	struct Amiga_Stat* stat;
+	int fileRealLength;
+	
+	struct IOTArray Terminators =
+	{
+		0x04040403,   /*  etx eot */
+		0x03030303    /* fill to end with lowest value */
+	};
+
+	
+	SerialRead(SerialIO,"1","Getting old filename",FilenameReadBuffer);
+	SerialRead(SerialIO,"2","Getting size",SizeReadBuffer);
+	SerialRead(SerialIO,"3","Getting offset",OffsetReadBuffer);
+	
+	stat = Amiga_Get_Stat(FilenameReadBuffer);
+	if (stat)
+	{
+		fileRealLength=(int)stat->st_size;
+		free(stat);
+		size = atoi(SizeReadBuffer);
+		offset = atoi(OffsetReadBuffer);
+		
+		if (offset+size>fileRealLength)
+		{
+			size=fileRealLength-offset;
+		}
+		//printf("Size calculated in %d\n",size);
+		if (offset>fileRealLength)
+		{
+			printf("Something went wrong, offset cant be greater than the file lenght\n");
+			SendSerialEndOfData(SerialIO);
+			return ;
+		}
+		
+		/** inizio ipotesi **/
+		
+		// Disable termination mode
+		SerialIO->io_SerFlags &= ~ SERF_EOFMODE;
+		SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
+								
+		if (DoIO((struct IORequest *)SerialIO))
+    	printf("Set Params failed ");   /* Inform user of error */
+		
+		fh = fopen(FilenameReadBuffer, "r");
+		if (fh)
+		{
+			if  (offset>0) fseek(fh, offset, SEEK_SET);
+			// size if the length in bytes of the requested data or the file size of the requested data exceedes the file length
+			// from now i read data from the file in chunks, each chunk is CHUNK_DATA_READ bytes
+			contBytes=0;
+			while (contBytes < size )
+			{
+				// If i am at the last iteration i want to read only the last files and not the entire chunk
+				if (contBytes+CHUNK_DATA_READ<size) bytesToRead=CHUNK_DATA_READ;
+				else bytesToRead=size-contBytes;
+				
+				if (VERBOSE) printf("contBytes : %d, fileSize : %d, bytesToRead : %d\n",contBytes,size,bytesToRead);
+				
+				// point fh to skip bytes alread read
+				if (contBytes>0) if (fseek(fh,offset+contBytes,SEEK_SET)==-1) {printf("Error in seeking at %d",offset+contBytes);exit(0);}
+				
+				// read bytesToRead bytes from file
+				data=malloc(bytesToRead);
+				fread(data,bytesToRead,1,fh);
+				
+				// encode the data read to base64 for transfer
+				int base64Size=bytesToRead;
+				base64Data = base64_encode((u8*)data, &base64Size);
+				printf("Base 64 prodotta %d - %s\n",base64Size,base64Data);
+				
+				// Send the encoded chunk via serial port followed by a newline
+				for (int serialCont=0;serialCont<base64Size;serialCont++)
+				{
+				SerialIO->IOSer.io_Length   = 1;
+				SerialIO->IOSer.io_Command  = CMD_WRITE;
+				SerialIO->IOSer.io_Data     = (APTR)&base64Data[serialCont];
+				//printf("Sto per mandare %s\n",base64Data);
+				if (DoIO((struct IORequest *)SerialIO))     /* execute write */
+					printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
+				//printf("Mandato");
+				}
+				sendSerialNewLine(SerialIO);
+				
+				free(base64Data);
+				free(data);
+				contBytes+=bytesToRead;
+			}
+			
+			fclose(fh);
+			
+			// Restore termination mode
+			SerialIO->io_SerFlags |= SERF_EOFMODE;
+			SerialIO->io_TermArray = Terminators;
+			SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
+			if (DoIO((struct IORequest *)SerialIO))
+				printf("Set Params failed ");   /* Inform user of error */
+		}
+		/*** fine ipotesi ***/
+		
+		/** inizio originale 
+		fh = fopen(FilenameReadBuffer, "r");
+		if (fh)
+		{
+			data=malloc(size);
+			if (atoi(OffsetReadBuffer)>0) fseek(fh, atoi(OffsetReadBuffer), SEEK_SET);
+			fread(data,size,1,fh);
+			
+			base64Data = base64_encode((u8*)data, &size);
+			
+			fileSize=size;
+			contBytes=0;
+								
+			while (contBytes < fileSize )
+			{
+				if (contBytes+CHUNK_DATA_READ<fileSize) bytesToRead=CHUNK_DATA_READ;
+				else bytesToRead=fileSize-contBytes;
+
+				if (VERBOSE) printf("contBytes : %d, fileSize : %d, bytesToRead : %d\n",contBytes,fileSize,bytesToRead);
+				SerialIO->IOSer.io_Length   = bytesToRead;
+				SerialIO->IOSer.io_Data     = (APTR)&base64Data[0];
+				SerialIO->IOSer.io_Command  = CMD_WRITE;
+				DoIO((struct IORequest *)SerialIO);
+									
+				contBytes+=bytesToRead;
+			}
+			fclose(fh); 
+		}fine originale **/
+	}
+	else printf("File not found");
+	SendSerialEndOfData(SerialIO);
 	return ;
 }
 
