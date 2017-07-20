@@ -326,6 +326,7 @@ int main(int argc,char** argv)
 						else
 						{
 							printf("Cmd %s not recognized\n",SerialReadBuffer);
+							terminate = 1;
 						}
 					}
 				}
@@ -968,6 +969,9 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 	SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
 	if (DoIO((struct IORequest *)SerialIO))
 		printf("Set Params failed ");   /* Inform user of error */
+		
+	sendSerialMessage(SerialIO,"5","Send OK");
+        sendSerialEndOfData(SerialIO);
 	return ;
 }
 
