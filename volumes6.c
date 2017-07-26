@@ -34,7 +34,7 @@
 
 #define READ_BUFFER_SIZE 256
 //#define CHUNK_DATA_READ 256 // Chunk of bytes read from serial interface while file transfer
-#define CHUNK_DATA_READ 256
+#define CHUNK_DATA_READ  512
 
 struct VolumeInfo
 {
@@ -76,6 +76,7 @@ void sendSerialNewLine(struct IOExtSer*);
 // Serial functions
 void Amiga_Store_Data(struct IOExtSer*);
 void Amiga_Create_Empty_File(struct IOExtSer*);
+void Amiga_Delete(struct IOExtSer*);
 void Amiga_Create_Empty_Drawer(struct IOExtSer*);
 void Amiga_Rename_File_Drawer(struct IOExtSer*);
 void Amiga_Send_vols(struct IOExtSer*);
@@ -134,6 +135,10 @@ int main(int argc,char** argv)
 				// Start of cmd reading
 				SerialIO->io_SerFlags |= SERF_EOFMODE;
 				SerialIO->io_TermArray = Terminators;
+				
+				SerialIO->io_SerFlags      |= SERF_XDISABLED;
+				SerialIO->io_Baud           = 19200;
+				
 				SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
 				if (DoIO((struct IORequest *)SerialIO))
                  			printf("Set Params failed ");   /* Inform user of error */
@@ -143,6 +148,8 @@ int main(int argc,char** argv)
 					{
 						for (cont=0;cont<READ_BUFFER_SIZE;cont++)
                 					SerialReadBuffer[cont]=0;
+                		SerialIO->io_SerFlags |= SERF_EOFMODE;
+						SerialIO->io_TermArray = Terminators;
 						SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
 		   				SerialIO->IOSer.io_Data     = (APTR)&SerialReadBuffer[0];
 		   				SerialIO->IOSer.io_Command  = CMD_READ;
@@ -190,7 +197,7 @@ int main(int argc,char** argv)
 							DoIO((struct IORequest *)SerialIO);
 							for (cont=0;cont<READ_BUFFER_SIZE;cont++)
 							{
-								if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file");}
+								if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
 								
 							}
 							Amiga_Send_List(SerialIO,FilenameReadBuffer);
@@ -252,7 +259,7 @@ int main(int argc,char** argv)
 							
 							for (cont=0;cont<READ_BUFFER_SIZE;cont++)
 							{
-								if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file\n");}
+								if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
 								
 							}
 
@@ -320,6 +327,10 @@ int main(int argc,char** argv)
 						else if (SerialReadBuffer[0]=='d' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='l' && SerialReadBuffer[3]=='a' && SerialReadBuffer[4]=='y' && SerialReadBuffer[5]==4)
 						{
 							Amiga_Delay(SerialIO);
+						}
+						else if (SerialReadBuffer[0]=='d' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='l' && SerialReadBuffer[3]=='e' && SerialReadBuffer[4]=='t' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]==4)
+						{
+							Amiga_Delete(SerialIO);
 						}
 						else if (SerialReadBuffer[0]=='e' && SerialReadBuffer[1]=='x' && SerialReadBuffer[2]=='i' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 							terminate = 1;
@@ -634,7 +645,7 @@ void Amiga_Create_Empty_Drawer(struct IOExtSer* SerialIO)
 	
 		for (cont=0;cont<READ_BUFFER_SIZE;cont++)
 		{
-			if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file\n");}
+			if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
 		}
 		
 		lock = CreateDir (FilenameReadBuffer);
@@ -676,7 +687,7 @@ void Amiga_Create_Empty_File(struct IOExtSer* SerialIO)
 	
 	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
 	{
-		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;printf("corretto il nome del file\n");}
+		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
 	}
 
 	fh = fopen(FilenameReadBuffer, "wb");
@@ -688,6 +699,48 @@ void Amiga_Create_Empty_File(struct IOExtSer* SerialIO)
 	else
 	{							
 		fclose(fh);
+		sendSerialMessage(SerialIO,"OK","OK");
+	}
+	sendSerialEndOfData(SerialIO);
+	return ;
+}
+
+// Create an empty file
+void Amiga_Delete(struct IOExtSer* SerialIO)
+{
+	char FilenameReadBuffer[READ_BUFFER_SIZE];
+	FILE* fh;
+	int cont;
+	BOOL outcome;
+	
+	/* Init buffer with zeroes */
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		FilenameReadBuffer[cont]=0;
+	}
+	sendSerialMessage(SerialIO,"1","Getting filename");
+	sendSerialEndOfData(SerialIO);
+
+	// Read filename from serial port
+	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
+	SerialIO->IOSer.io_Command  = CMD_READ;
+	SerialIO->IOSer.io_Data     = (APTR)&FilenameReadBuffer[0];
+	DoIO((struct IORequest *)SerialIO);
+	printf("Received : ##%s##\n",FilenameReadBuffer);
+	
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
+	}
+
+	outcome = DeleteFile(FilenameReadBuffer);
+	if (!outcome)
+	{
+		printf("Error in deleting %s\n",FilenameReadBuffer);
+		sendSerialMessage(SerialIO,"KO","KO");
+	}
+	else
+	{							
 		sendSerialMessage(SerialIO,"OK","OK");
 	}
 	sendSerialEndOfData(SerialIO);
@@ -751,15 +804,13 @@ void Amiga_Read_File(struct IOExtSer* SerialIO)
 			SendSerialEndOfData(SerialIO);
 			return ;
 		}
-		
-		/** inizio ipotesi **/
-		
+				
 		// Disable termination mode
 		SerialIO->io_SerFlags &= ~ SERF_EOFMODE;
 		SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
 								
 		if (DoIO((struct IORequest *)SerialIO))
-    	printf("Set Params failed ");   /* Inform user of error */
+			printf("Set Params failed ");   /* Inform user of error */
 		
 		fh = fopen(FilenameReadBuffer, "r");
 		if (fh)
@@ -786,18 +837,18 @@ void Amiga_Read_File(struct IOExtSer* SerialIO)
 				// encode the data read to base64 for transfer
 				int base64Size=bytesToRead;
 				base64Data = base64_encode((u8*)data, &base64Size);
-				printf("Base 64 prodotta %d - %s\n",base64Size,base64Data);
+				if (VERBOSE) printf("Base 64 data %d - %s\n",base64Size,base64Data);
 				
 				// Send the encoded chunk via serial port followed by a newline
 				for (int serialCont=0;serialCont<base64Size;serialCont++)
 				{
-				SerialIO->IOSer.io_Length   = 1;
-				SerialIO->IOSer.io_Command  = CMD_WRITE;
-				SerialIO->IOSer.io_Data     = (APTR)&base64Data[serialCont];
-				//printf("Sto per mandare %s\n",base64Data);
-				if (DoIO((struct IORequest *)SerialIO))     /* execute write */
-					printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
-				//printf("Mandato");
+					SerialIO->IOSer.io_Length   = 1;
+					SerialIO->IOSer.io_Command  = CMD_WRITE;
+					SerialIO->IOSer.io_Data     = (APTR)&base64Data[serialCont];
+					//printf("Sto per mandare %s\n",base64Data);
+					if (DoIO((struct IORequest *)SerialIO))     /* execute write */
+						printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
+					//printf("Mandato");
 				}
 				sendSerialNewLine(SerialIO);
 				
@@ -815,36 +866,6 @@ void Amiga_Read_File(struct IOExtSer* SerialIO)
 			if (DoIO((struct IORequest *)SerialIO))
 				printf("Set Params failed ");   /* Inform user of error */
 		}
-		/*** fine ipotesi ***/
-		
-		/** inizio originale 
-		fh = fopen(FilenameReadBuffer, "r");
-		if (fh)
-		{
-			data=malloc(size);
-			if (atoi(OffsetReadBuffer)>0) fseek(fh, atoi(OffsetReadBuffer), SEEK_SET);
-			fread(data,size,1,fh);
-			
-			base64Data = base64_encode((u8*)data, &size);
-			
-			fileSize=size;
-			contBytes=0;
-								
-			while (contBytes < fileSize )
-			{
-				if (contBytes+CHUNK_DATA_READ<fileSize) bytesToRead=CHUNK_DATA_READ;
-				else bytesToRead=fileSize-contBytes;
-
-				if (VERBOSE) printf("contBytes : %d, fileSize : %d, bytesToRead : %d\n",contBytes,fileSize,bytesToRead);
-				SerialIO->IOSer.io_Length   = bytesToRead;
-				SerialIO->IOSer.io_Data     = (APTR)&base64Data[0];
-				SerialIO->IOSer.io_Command  = CMD_WRITE;
-				DoIO((struct IORequest *)SerialIO);
-									
-				contBytes+=bytesToRead;
-			}
-			fclose(fh); 
-		}fine originale **/
 	}
 	else printf("File not found");
 	SendSerialEndOfData(SerialIO);
@@ -906,7 +927,6 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 	SerialIO->IOSer.io_Data     = (APTR)&AppendReadBuffer[0];
 	DoIO((struct IORequest *)SerialIO);
 	if (VERBOSE) printf("Received : ##%s##\n",AppendReadBuffer);
-	
 
 	// From now i am listening for incoming data
 	sendSerialMessage(SerialIO,"4","Getting binary data");
@@ -925,7 +945,7 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 
 	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
 	{
-		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;if (VERBOSE) printf("corretto il nome del file\n");}
+		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
 	}
 
 	if (AppendReadBuffer[0]=='1')
@@ -940,35 +960,45 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 	{							
 		fileSize=atoi(FilesizeReadBuffer);
 		contBytes=0;
-							
+
 		while (contBytes < fileSize )
 		{
 			if (contBytes+CHUNK_DATA_READ<fileSize) bytesToRead=CHUNK_DATA_READ;
 			else bytesToRead=fileSize-contBytes;
 
 			if (VERBOSE) printf("contBytes : %d, fileSize : %d, bytesToRead : %d\n",contBytes,fileSize,bytesToRead);
-			SerialIO->IOSer.io_Length   = bytesToRead;
-			SerialIO->IOSer.io_Data     = (APTR)&DataReadBuffer[0];
-			SerialIO->IOSer.io_Command  = CMD_READ;
-			DoIO((struct IORequest *)SerialIO);
-								
-			if (fh)
+			for (int serialCont=0;serialCont<bytesToRead;serialCont++)
 			{
-				fwrite(DataReadBuffer,bytesToRead,1,fh);
+				SerialIO->IOSer.io_Length   = 1;
+				SerialIO->IOSer.io_Data     = (APTR)&DataReadBuffer[serialCont];
+				SerialIO->IOSer.io_Command  = CMD_READ;
+				while (DoIO((struct IORequest *)SerialIO))
+				{
+					printf("Read failed.  Error - %d\n",SerialIO->IOSer.io_Error);
+					if (SerialIO->IOSer.io_Error==SerErr_BaudMismatch) printf("Baud mismatch\n");
+				}
 			}
+
+			size_t bytesWritten=fwrite(DataReadBuffer,bytesToRead,1,fh);
 								
 			contBytes+=bytesToRead;
 		}
 		fclose(fh);
 	}
 	if (VERBOSE) printf("Rimetto a posto il terminator mode\n");
-
+	
 	// Restore termination mode
 	SerialIO->io_SerFlags |= SERF_EOFMODE;
 	SerialIO->io_TermArray = Terminators;
 	SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
 	if (DoIO((struct IORequest *)SerialIO))
 		printf("Set Params failed ");   /* Inform user of error */
+		
+	// Experimental
+	SerialIO->IOSer.io_Flags=0;
+	SerialIO->IOSer.io_Command  = CMD_CLEAR;
+	if (DoIO((struct IORequest *)SerialIO))
+		printf("Set clear failed ");
 		
 	sendSerialMessage(SerialIO,"5","Send OK");
         sendSerialEndOfData(SerialIO);
