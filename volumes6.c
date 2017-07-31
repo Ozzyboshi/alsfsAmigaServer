@@ -68,7 +68,6 @@ struct ContentInfo* getContentList(char*);
 struct Amiga_Stat* Amiga_Get_Stat(char*);
 
 void sendSerialMessage(struct IOExtSer*,char*,char*);
-void sendSerialMessage512(struct IOExtSer*,char*,char*);
 
 void sendSerialEndOfData(struct IOExtSer*);
 void sendSerialNewLine(struct IOExtSer*);
@@ -373,26 +372,6 @@ void sendSerialMessage(struct IOExtSer* SerialIO,char* msg,char* debugMsg)
 		SerialIO->IOSer.io_Length   = -1;
 		SerialIO->IOSer.io_Command  = CMD_WRITE;
 		snprintf(chunk,40,"%s",&msg[i*40]);
-		SerialIO->IOSer.io_Data     = (APTR)chunk;
-		if (DoIO((struct IORequest *)SerialIO))     /* execute write */
-			printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
-
-	}
-	return ;
-}
-
-void sendSerialMessage512(struct IOExtSer* SerialIO,char* msg,char* debugMsg)
-{
-	char chunk[41];
-	int i=0;
-	
-	//SerialIO->IOSer.io_Data     = (APTR)msg;
-	if (debugMsg && VERBOSE) printf("%s\n",debugMsg);
-	for (i=0;i<=(int)((strlen(msg)-1)/512);i++)
-	{
-		SerialIO->IOSer.io_Length   = -1;
-		SerialIO->IOSer.io_Command  = CMD_WRITE;
-		snprintf(chunk,512,"%s",&msg[i*512]);
 		SerialIO->IOSer.io_Data     = (APTR)chunk;
 		if (DoIO((struct IORequest *)SerialIO))     /* execute write */
 			printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
@@ -884,6 +863,7 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 	int fileSize = 0;
 	int bytesToRead = 0;
 	FILE* fh;
+	BPTR fd;
 
 	struct IOTArray Terminators =
 	{
@@ -947,12 +927,22 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 	{
 		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
 	}
-
 	if (AppendReadBuffer[0]=='1')
+	{
+		fd = Open(FilenameReadBuffer, MODE_OLDFILE);
+		Seek( fd, 0, OFFSET_END );
+		printf("Trying to append...\n");
+	}
+	else
+	{
+		fd = Open(FilenameReadBuffer, MODE_NEWFILE);
+	}
+	/*if (AppendReadBuffer[0]=='1')
 		fh = fopen(FilenameReadBuffer, "ab");
 	else
 		fh = fopen(FilenameReadBuffer, "wb");
-	if (!fh)
+	if (!fh)*/
+	if (!fd)
 	{							
 		printf("Error in writing %s\n",FilenameReadBuffer);
 	}
@@ -977,13 +967,15 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 					printf("Read failed.  Error - %d\n",SerialIO->IOSer.io_Error);
 					if (SerialIO->IOSer.io_Error==SerErr_BaudMismatch) printf("Baud mismatch\n");
 				}
+				if (SerialIO->IOSer.io_Actual!=1) printf("Error, character not read: %lu\n",SerialIO->IOSer.io_Actual);
 			}
 
-			size_t bytesWritten=fwrite(DataReadBuffer,bytesToRead,1,fh);
-								
+			//size_t bytesWritten=fwrite(DataReadBuffer,bytesToRead,1,fh);
+			Write(fd,DataReadBuffer,bytesToRead);					
 			contBytes+=bytesToRead;
 		}
-		fclose(fh);
+		//fclose(fh);
+		Close(fd);
 	}
 	if (VERBOSE) printf("Rimetto a posto il terminator mode\n");
 	
@@ -1065,6 +1057,11 @@ void Serial_Amiga_Send_Stat(struct IOExtSer* SerialIO,char* path)
 		
 		sprintf(app,"%ld",stat->days);
 		if (VERBOSE) printf("Spedisco %s come days\n",app);
+		sendSerialMessage(SerialIO,app,app);
+		sendSerialNewLine(SerialIO);
+		
+		sprintf(app,"%ld",stat->minutes);
+		if (VERBOSE) printf("Spedisco %s come minutes\n",app);
 		sendSerialMessage(SerialIO,app,app);
 		sendSerialNewLine(SerialIO);
 		

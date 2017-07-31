@@ -2,7 +2,7 @@ CC=vc
 CFLAGS=-I$(NDK_INC)
 all:
 	$(CC) +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/openwin.c -o /data/openwin
-	$(CC) +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/tiny.c -o /data/tiny
+	$(CC) +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/transdisk.c -o /data/transdisk_boh
 	$(CC) -c +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/serialread.c -o /data/serialread.o
 	$(CC) -c +kick13 -c99  -o /data/bde64.o /data/bde64.c
 
