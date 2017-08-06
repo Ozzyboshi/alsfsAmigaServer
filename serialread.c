@@ -72,3 +72,36 @@ void SendSerialNewLine(struct IOExtSer* SerialIO)
 	if (DoIO((struct IORequest *)SerialIO)) printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
 	return ;
 }
+void DisableTerminationMode(struct IOExtSer* SerialIO)
+{
+	if (VERBOSE) printf("Disabling termination mode\n");
+	SerialIO->io_SerFlags &= ~ SERF_EOFMODE;
+	SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
+							
+	if (DoIO((struct IORequest *)SerialIO))
+    	fprintf(stderr,"Set Params failed ");   /* Inform user of error */
+
+    return ;
+}
+void EnableTerminationMode(struct IOExtSer* SerialIO)
+{
+	if (VERBOSE) printf("Disabling termination mode\n");
+	SerialIO->io_SerFlags |= SERF_EOFMODE;
+	SerialIO->io_TermArray = TERMINATORS_CHARACTERS;
+	SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
+
+	if (DoIO((struct IORequest *)SerialIO))
+		fprintf(stderr,"Set Params failed ");   /* Inform user of error */
+
+	return ;
+}
+void SendClear(struct IOExtSer* SerialIO)
+{
+	SerialIO->IOSer.io_Flags=0;
+	SerialIO->IOSer.io_Command  = CMD_CLEAR;
+	if (DoIO((struct IORequest *)SerialIO))
+		fprintf(stderr,"Set clear failed ");
+
+	return ;
+}
+
