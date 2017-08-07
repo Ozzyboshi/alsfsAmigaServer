@@ -36,8 +36,7 @@
 
 
 #define READ_BUFFER_SIZE 256
-//#define CHUNK_DATA_READ 256 // Chunk of bytes read from serial interface while file transfer
-#define CHUNK_DATA_READ  512
+#define CHUNK_DATA_READ  512 // Chunk of bytes read from serial interface while file transfer
 
 struct VolumeInfo
 {
@@ -1046,32 +1045,32 @@ void Serial_Amiga_Send_Stat(struct IOExtSer* SerialIO,char* path)
 		for (cont=0;cont<100;cont++) app[cont]=0;
 		
 		sprintf(app,"%ld",stat->st_size);
-		if (VERBOSE) printf("Spedisco %s come size\n",app);
+		if (VERBOSE) printf("Sent %s as size\n",app);
 		SendSerialMessage(SerialIO,app,app);
 		SendSerialNewLine(SerialIO);
 		for (cont=0;cont<100;cont++) app[cont]=0;
 		sprintf(app,"%ld",stat->st_blksize);
-		if (VERBOSE) printf("Spedisco %s come block size\n",app);
+		if (VERBOSE) printf("Sent %s as block size\n",app);
 		SendSerialMessage(SerialIO,app,app);
 		SendSerialNewLine(SerialIO);
 		
 		sprintf(app,"%d",stat->directory);
-		if (VERBOSE) printf("Spedisco %s come directory\n",app);
+		if (VERBOSE) printf("Sent %s as directory\n",app);
 		SendSerialMessage(SerialIO,app,app);
 		SendSerialNewLine(SerialIO);
 		
 		sprintf(app,"%ld",stat->days);
-		if (VERBOSE) printf("Spedisco %s come days\n",app);
+		if (VERBOSE) printf("Sent %s as days\n",app);
 		SendSerialMessage(SerialIO,app,app);
 		SendSerialNewLine(SerialIO);
 		
 		sprintf(app,"%ld",stat->minutes);
-		if (VERBOSE) printf("Spedisco %s come minutes\n",app);
+		if (VERBOSE) printf("Sent %s as minutes\n",app);
 		SendSerialMessage(SerialIO,app,app);
 		SendSerialNewLine(SerialIO);
 		
 		sprintf(app,"%ld",stat->seconds);
-		if (VERBOSE) printf("Spedisco %s come seconds\n",app);
+		if (VERBOSE) printf("Sent %s as seconds\n",app);
 		SendSerialMessage(SerialIO,app,app);
 		SendSerialNewLine(SerialIO);
 		
@@ -1108,7 +1107,7 @@ void Amiga_Write_Adf_Track(int track,UBYTE ** buffer,int devicenum)
 					fflush(stdout);
 						
 			    	ioreq->io_Data = buffer[sec];
-			    	if (VERBOSE) printf("Scrivo alla location %d\n",512 * (track * sectors + sec));
+			    	if (VERBOSE) printf("Writing at location %d\n",512 * (track * sectors + sec));
 					ioreq->io_Offset = 512 * (track * sectors + sec);
 					if (DoIO( (struct IORequest *) ioreq))
 					{
@@ -1171,6 +1170,12 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 	SerialIO->IOSer.io_Data     = (APTR)&TrackDeviceReadBuffer[0];
 	DoIO((struct IORequest *)SerialIO);
 	if (VERBOSE) printf("Received : ##%s##\n",TrackDeviceReadBuffer);
+	if (atoi(TrackDeviceReadBuffer)<0||atoi(TrackDeviceReadBuffer)>4)
+	{
+		SendSerialMessage(SerialIO,"6","Trakdevice number not entered correctly");
+		SendSerialEndOfData(SerialIO);
+		return ;
+	}
 
 	// Read filesize from serial port
 	SendSerialMessage(SerialIO,"2","Getting start");
@@ -1231,8 +1236,8 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 		if (contBytes%5632==0)
 		{
 			// flush to sector
-			if (VERBOSE) printf("Start writing track %d\n",trackCounter);
-			Amiga_Write_Adf_Track(trackCounter,buffer,atoi(StartTrackReadBuffer)+atoi(TrackDeviceReadBuffer));
+			if (VERBOSE) printf("Start writing track %d\n",(atoi(StartTrackReadBuffer)*2)+trackCounter);
+			Amiga_Write_Adf_Track((atoi(StartTrackReadBuffer)*2)+trackCounter,buffer,atoi(TrackDeviceReadBuffer));
 			trackCounter++;
 			sectorCounter=0;
 		}
@@ -1246,7 +1251,6 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 	}
 
 	for (cont=0;cont < 11 ; cont ++) FreeMem(buffer[cont], 512);
-	if (VERBOSE) printf("Rimetto a posto il terminator mode\n");
 	
 	// Restore termination mode
 	EnableTerminationMode(SerialIO);
