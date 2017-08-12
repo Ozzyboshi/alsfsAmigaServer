@@ -1,12 +1,11 @@
 CC=vc
 CFLAGS=-I$(NDK_INC)
 all:
-	$(CC) +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/openwin.c -o /data/openwin
-	$(CC) +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/transdisk.c -o /data/transdisk_boh
+	$(CC) -c +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/amiga_operations.c -o /data/amiga_operations.o
 	$(CC) -c +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/serialread.c -o /data/serialread.o
 	$(CC) -c +kick13 -c99  -o /data/bde64.o /data/bde64.c
 
-	$(CC) +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/serialread.o /data/bde64.o /data/volumes6.c -o /data/volumes6
+	$(CC) +kick13 -c99 $(CFLAGS) -lamiga -lauto /data/amiga_operations.o /data/serialread.o /data/bde64.o  /data/volumes6.c -o /data/volumes6
 	
 	curl --insecure -u 'ozzy:nzv!88^UWAy9YsqWmrI5N$$' -T /data/volumes6 "https://cloud.ozzyboshi.com/nextcloud/remote.php/dav/files/ozzy/Amiga/whdload/volumes6"
 	# scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /data/volumes6 pi@10.0.0.10: 

@@ -8,12 +8,10 @@ static struct IOTArray TERMINATORS_CHARACTERS =
 
 void SerialRead(struct IOExtSer*,const char*,const char*,char*);
 void SendSerialMessage(struct IOExtSer*,const char*,const char*);
+void SendSerialMessageAndEOD(struct IOExtSer*,const char*,const char*);
 void SendSerialEndOfData(struct IOExtSer*);
 void SendSerialNewLine(struct IOExtSer*);
 void DisableTerminationMode(struct IOExtSer*);
 void EnableTerminationMode(struct IOExtSer*);
 void SendClear(struct IOExtSer*);
-
-
-static int VERBOSE=0;
 

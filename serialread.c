@@ -9,6 +9,9 @@
 #include <string.h>
 
 #include "serialread.h"
+#include "debug.h"
+
+//int VERBOSE;
  
 void SerialRead(struct IOExtSer* SerialIO,const char* serialMsg,const char* debugMsg,char* Buffer)
 {
@@ -38,7 +41,6 @@ void SendSerialMessage(struct IOExtSer* SerialIO,const char* msg,const char* deb
 	char chunk[41];
 	int i=0;
 	
-	//SerialIO->IOSer.io_Data     = (APTR)msg;
 	if (debugMsg && VERBOSE) printf("%s\n",debugMsg);
 	for (i=0;i<=(int)((strlen(msg)-1)/40);i++)
 	{
@@ -47,11 +49,19 @@ void SendSerialMessage(struct IOExtSer* SerialIO,const char* msg,const char* deb
 		snprintf(chunk,40,"%s",&msg[i*40]);
 		SerialIO->IOSer.io_Data     = (APTR)chunk;
 		if (DoIO((struct IORequest *)SerialIO))     /* execute write */
-			printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
+			fprintf(stderr,"Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
 
 	}
 	return ;
 }
+// As SendSerialMessage but terminated with EOF
+void SendSerialMessageAndEOD(struct IOExtSer* SerialIO,const char* msg,const char* debugMsg)
+{
+	SendSerialMessage(SerialIO,msg,debugMsg);
+	SendSerialEndOfData(SerialIO);
+}
+
+
 void SendSerialEndOfData(struct IOExtSer* SerialIO)
 {
 	char buffer[2];
@@ -60,8 +70,8 @@ void SendSerialEndOfData(struct IOExtSer* SerialIO)
 	SerialIO->IOSer.io_Length   = 1;
 	SerialIO->IOSer.io_Command  = CMD_WRITE;
 	SerialIO->IOSer.io_Data     = (APTR)&buffer[0];
-	if (VERBOSE) printf("ETX (end of text) sent");
-	if (DoIO((struct IORequest *)SerialIO)) printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
+	if (VERBOSE) printf("ETX (end of text) sent\n");
+	if (DoIO((struct IORequest *)SerialIO)) fprintf(stderr,"Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
 	return ;
 }
 void SendSerialNewLine(struct IOExtSer* SerialIO)
@@ -69,7 +79,7 @@ void SendSerialNewLine(struct IOExtSer* SerialIO)
 	SerialIO->IOSer.io_Length   = 1;
 	SerialIO->IOSer.io_Command  = CMD_WRITE;
 	SerialIO->IOSer.io_Data     = (APTR)"\n";
-	if (DoIO((struct IORequest *)SerialIO)) printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
+	if (DoIO((struct IORequest *)SerialIO)) fprintf(stderr,"Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
 	return ;
 }
 void DisableTerminationMode(struct IOExtSer* SerialIO)
