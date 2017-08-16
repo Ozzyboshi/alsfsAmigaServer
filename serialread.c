@@ -26,7 +26,7 @@ void SerialRead(struct IOExtSer* SerialIO,const char* serialMsg,const char* debu
 	SerialIO->IOSer.io_Command  = CMD_READ;
 	SerialIO->IOSer.io_Data     = (APTR)&Buffer[0];
 	DoIO((struct IORequest *)SerialIO);
-		printf("Received : ##%s##\n",Buffer);
+	if (VERBOSE) printf("Received : ##%s##\n",Buffer);
 		
 	for (cont=0;cont<SERIAL_BUFFER_SIZE;cont++)
 		if (Buffer[cont]==4)
