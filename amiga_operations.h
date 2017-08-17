@@ -6,3 +6,7 @@ int Amiga_Read_Adf_Data(int devicenum,int length,int offset,UBYTE **);
 
 // Checks
 int Amiga_Check_FloppyDisk_Presence(int );
+
+// Refresh
+int ReloadDisk (const int trackdevice);
+

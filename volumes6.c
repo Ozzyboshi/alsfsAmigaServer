@@ -1308,6 +1308,9 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 	//Clear internal buffers
 	SendClear(SerialIO);
 
+	// Reload df0
+	printf("Reload torna %d\n",ReloadDisk(atoi(TrackDeviceReadBuffer)));
+
 	// Send confirmation
 	SendSerialMessage(SerialIO,"5","Send OK");
     sendSerialEndOfData(SerialIO);

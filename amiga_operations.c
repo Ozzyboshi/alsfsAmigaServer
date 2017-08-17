@@ -152,3 +152,11 @@ int Amiga_Check_FloppyDisk_Presence(int devicenum)
 	}
 	return flag;
 }
+
+int ReloadDisk (const int trackdevice)
+{
+	char cmd[100];
+	printf("Eseguo %s",cmd);
+	sprintf(cmd,"diskchange df%d:",trackdevice);
+	return Execute(cmd,0,0);
+}
