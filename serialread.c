@@ -95,7 +95,7 @@ void DisableTerminationMode(struct IOExtSer* SerialIO)
 }
 void EnableTerminationMode(struct IOExtSer* SerialIO)
 {
-	if (VERBOSE) printf("Disabling termination mode\n");
+	if (VERBOSE) printf("Enabling termination mode\n");
 	SerialIO->io_SerFlags |= SERF_EOFMODE;
 	SerialIO->io_TermArray = TERMINATORS_CHARACTERS;
 	SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;

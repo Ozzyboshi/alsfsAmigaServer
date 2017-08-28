@@ -3,6 +3,8 @@
 #include <proto/dos.h>
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <devices/trackdisk.h>
 
@@ -156,7 +158,149 @@ int Amiga_Check_FloppyDisk_Presence(int devicenum)
 int ReloadDisk (const int trackdevice)
 {
 	char cmd[100];
-	printf("Eseguo %s",cmd);
 	sprintf(cmd,"diskchange df%d:",trackdevice);
 	return Execute(cmd,0,0);
+}
+
+// Read all files and directory from a location
+struct ContentInfo* getContentList(char* path)
+{
+	struct FileInfoBlock * FIB;
+	BPTR lock;
+	BOOL success;
+	struct ContentInfo* newObj;
+	struct ContentInfo* ptrHead;
+	struct ContentInfo* continfoHead=NULL;
+	int found=0;
+	struct VolumeInfo* ptr;
+	struct VolumeInfo* freePtr;
+	struct VolumeInfo* volinfoHead=NULL;
+
+	volinfoHead=getVolumes(DLT_VOLUME);
+	ptr=volinfoHead;
+	while (!found&&ptr)
+	{
+		if (!strncmp(ptr->name,path,strlen(ptr->name))) found=1;
+		ptr=ptr->next;
+	}
+
+	ptr=volinfoHead;
+	while (ptr!=NULL)
+	{
+		freePtr=ptr->next;
+		free(ptr);
+		ptr=freePtr;
+	}
+	if (!found) return NULL;
+
+	lock = Lock(path, ACCESS_READ);
+	if (lock==0) return NULL;
+	FIB = AllocVec(sizeof(struct FileInfoBlock), MEMF_CLEAR);
+	if (FIB)
+	{
+		Examine(lock, FIB);
+		success = ExNext(lock, FIB);
+		while (success != DOSFALSE)
+		{
+			newObj=malloc(sizeof(struct ContentInfo));
+			strcpy(newObj->fileName,FIB->fib_FileName);
+			if (FIB->fib_DirEntryType < 0)
+			    newObj->type=0;
+			else
+			    newObj->type=1;
+			newObj->next=NULL;
+			if (continfoHead==NULL) continfoHead=newObj;
+			else
+			{
+				ptrHead=continfoHead;
+				while(ptrHead->next)
+					ptrHead=ptrHead->next;
+				ptrHead->next=newObj;
+			}
+			success = ExNext(lock, FIB);
+		}
+		FreeVec(FIB);
+	}
+	UnLock(lock);
+	return continfoHead;	
+}
+
+// Read all volumes from dos.library
+struct VolumeInfo* getVolumes(const int flag)
+{
+	struct DosLibrary* dosLib;
+	struct RootNode *root;
+	struct DosLibrary *DOSBase;
+	struct DosInfo* dosInfoPtr;
+	struct DevInfo* devInfoPtr;
+	struct DevInfo* navigator;
+	static struct VolumeInfo volInfoOut[10];
+	struct VolumeInfo* newObj;
+	struct VolumeInfo* ptrHead;
+	struct VolumeInfo* volinfoHead=NULL;
+	
+	int cont=0;
+	for (cont=0;cont<10;cont++)
+		BSTR2C(0,volInfoOut[cont].name);
+	cont=0;
+
+	if ((DOSBase = (struct DosLibrary*)OpenLibrary("dos.library",37)))
+	{
+		root = DOSBase->dl_Root;
+		if (root)
+		{
+			dosInfoPtr=(struct DosInfo*)BADDR(root->rn_Info);
+			if (dosInfoPtr)
+			{
+
+				devInfoPtr=(struct DevInfo*)BADDR(dosInfoPtr->di_DevInfo);
+				if (devInfoPtr)
+				{
+
+					for (navigator = devInfoPtr;navigator;navigator=BADDR(navigator->dvi_Next))
+					{
+						//if (navigator->dvi_Type==DLT_VOLUME)
+						if (navigator->dvi_Type==flag)
+						{
+							/*BSTR2C(navigator->dvi_Name,tmp);
+							printf("%s\n",tmp);*/
+							BSTR2C(navigator->dvi_Name, volInfoOut[cont++].name) ;	
+							newObj=malloc(sizeof(struct VolumeInfo));
+							BSTR2C(navigator->dvi_Name,newObj->name);
+							newObj->next=NULL;
+							if (volinfoHead==NULL) volinfoHead=newObj;
+							else
+							{
+								ptrHead=volinfoHead;
+								while(ptrHead->next)
+									ptrHead=ptrHead->next;
+								ptrHead->next=newObj;
+							}
+						}
+					}
+				}
+				else
+					printf("devinfoptr null");
+			}
+		}
+	}
+	else 
+	{
+   		printf("Failed to open DOS library.\n");
+   		return NULL;
+	}
+	CloseLibrary( (struct Library *)DOSBase);
+	return volinfoHead;
+}
+
+void BSTR2C(BSTR string, UBYTE* s)
+{
+  UBYTE i = 0 ;
+  UBYTE *ptr = (UBYTE *)BADDR(string) ;
+
+  for (i=0; i < ptr[0]; i++)
+  {
+    s[i] = ptr[i+1] ;
+  }
+  s[i] = 0 ;
 }
