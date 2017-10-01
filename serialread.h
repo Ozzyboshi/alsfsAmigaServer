@@ -14,4 +14,7 @@ void SendSerialNewLine(struct IOExtSer*);
 void DisableTerminationMode(struct IOExtSer*);
 void EnableTerminationMode(struct IOExtSer*);
 void SendClear(struct IOExtSer*);
+void SendFlush(struct IOExtSer*);
+void SendUpdate(struct IOExtSer*);
+int QuerySerialDeviceCharsLeft(struct IOExtSer*);
 

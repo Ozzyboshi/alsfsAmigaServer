@@ -114,4 +114,29 @@ void SendClear(struct IOExtSer* SerialIO)
 
 	return ;
 }
+void SendFlush(struct IOExtSer* SerialIO)
+{
+	SerialIO->IOSer.io_Flags=0;
+	SerialIO->IOSer.io_Command  = CMD_FLUSH;
+	if (DoIO((struct IORequest *)SerialIO))
+		fprintf(stderr,"Set flush failed ");
 
+	return ;
+}
+void SendUpdate(struct IOExtSer* SerialIO)
+{
+	SerialIO->IOSer.io_Flags=0;
+	SerialIO->IOSer.io_Command  = CMD_UPDATE;
+	if (DoIO((struct IORequest *)SerialIO))
+		fprintf(stderr,"Update failed ");
+}
+int QuerySerialDeviceCharsLeft(struct IOExtSer* SerialIO)
+{
+	SerialIO->IOSer.io_Flags=0;
+	SerialIO->IOSer.io_Command  = SDCMD_QUERY;
+	if (DoIO((struct IORequest *)SerialIO))
+		fprintf(stderr,"Set flush failed ");
+	//printf("Stats %u\n",SerialIO->io_Status);
+	//printf("Bytes left : %lu\n",SerialIO->IOSer.io_Actual);
+	return SerialIO->IOSer.io_Actual;
+}

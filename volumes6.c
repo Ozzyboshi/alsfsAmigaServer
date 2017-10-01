@@ -29,7 +29,6 @@
 
 #include <devices/trackdisk.h>
 
-
 #include "serialread.h"
 #include "bde64.h"
 #include "amiga_operations.h"
@@ -770,59 +769,15 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 	int bytesToRead = 0;
 	FILE* fh;
 	BPTR fd;
+	int errorDetected=0;
 
-	struct IOTArray Terminators =
-	{
-		0x04040403,   /*  etx eot */
-		0x03030303    /* fill to end with lowest value */
-	};
-
-	/* Init buffer with zeroes */
-	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
-	{
-		FilenameReadBuffer[cont]=0;
-		FilesizeReadBuffer[cont]=0;
-		AppendReadBuffer[cont]=0;
-	}
-	SendSerialMessage(SerialIO,"1","Getting filename");
-	SendSerialEndOfData(SerialIO);
-
-	// Read filename from serial port
-	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
-	SerialIO->IOSer.io_Command  = CMD_READ;
-	SerialIO->IOSer.io_Data     = (APTR)&FilenameReadBuffer[0];
-	DoIO((struct IORequest *)SerialIO);
-	if (VERBOSE) printf("Received : ##%s##\n",FilenameReadBuffer);
-
-	// Read filesize from serial port
-	SendSerialMessage(SerialIO,"2","Getting filesize");
-	SendSerialEndOfData(SerialIO);
-
-	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
-	SerialIO->IOSer.io_Command  = CMD_READ;
-	SerialIO->IOSer.io_Data     = (APTR)&FilesizeReadBuffer[0];
-	DoIO((struct IORequest *)SerialIO);
-	if (VERBOSE) printf("Received : ##%s##\n",FilesizeReadBuffer);
-
-	// Read append flag from serial port
-	SendSerialMessage(SerialIO,"3","Getting append flag");
-	SendSerialEndOfData(SerialIO);
-
-	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
-	SerialIO->IOSer.io_Command  = CMD_READ;
-	SerialIO->IOSer.io_Data     = (APTR)&AppendReadBuffer[0];
-	DoIO((struct IORequest *)SerialIO);
-	if (VERBOSE) printf("Received : ##%s##\n",AppendReadBuffer);
+	SerialRead(SerialIO,"1","Getting filename",FilenameReadBuffer);
+	SerialRead(SerialIO,"2","Getting filesize",FilesizeReadBuffer);
+	SerialRead(SerialIO,"3","Getting append flag",AppendReadBuffer);
 
 	// From now i am listening for incoming data
-	SendSerialMessage(SerialIO,"4","Getting binary data");
-	SendSerialEndOfData(SerialIO);
-
+	SendSerialMessageAndEOD(SerialIO,"4","Getting binary data");
 	DisableTerminationMode(SerialIO);
-
-	SerialIO->IOSer.io_Data     = (APTR)&DataReadBuffer[0];
-	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE;
-	SerialIO->IOSer.io_Command  = CMD_READ;
 
 	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
 	{
@@ -847,36 +802,72 @@ void Amiga_Store_Data(struct IOExtSer* SerialIO)
 		fileSize=atoi(FilesizeReadBuffer);
 		contBytes=0;
 
-		while (contBytes < fileSize )
+		while (errorDetected==0 && (contBytes < fileSize) )
 		{
 			if (contBytes+CHUNK_DATA_READ<fileSize) bytesToRead=CHUNK_DATA_READ;
 			else bytesToRead=fileSize-contBytes;
 
 			if (VERBOSE) printf("contBytes : %d, fileSize : %d, bytesToRead : %d\n",contBytes,fileSize,bytesToRead);
-			for (int serialCont=0;serialCont<bytesToRead;serialCont++)
+			for (int serialCont=0;errorDetected==0&&(serialCont<bytesToRead);serialCont++)
 			{
 				SerialIO->IOSer.io_Length   = 1;
 				SerialIO->IOSer.io_Data     = (APTR)&DataReadBuffer[serialCont];
 				SerialIO->IOSer.io_Command  = CMD_READ;
-				while (DoIO((struct IORequest *)SerialIO))
+				if (DoIO((struct IORequest *)SerialIO))
 				{
 					printf("Read failed.  Error - %d\n",SerialIO->IOSer.io_Error);
-					if (SerialIO->IOSer.io_Error==SerErr_BaudMismatch) printf("Baud mismatch\n");
+					if (SerialIO->IOSer.io_Error==SerErr_BaudMismatch) fprintf(stderr,"Baud mismatch\n");
+					else if (SerialIO->IOSer.io_Error==SerErr_DevBusy) fprintf(stderr,"The Serial device internal routines were busy\n");
+					else if (SerialIO->IOSer.io_Error==SerErr_InvParam) fprintf(stderr,"A task specified an invalid parameter in the IOExtSer structure\n");
+					else if (SerialIO->IOSer.io_Error==SerErr_LineErr) fprintf(stderr,"Bad electrical connection\n");
+					//else if (SerialIO->IOSer.io_Error==SerErr_NotOpen) printf("Serial device not open\n");
+					else if (SerialIO->IOSer.io_Error==SerErr_BufOverflow) fprintf(stderr,"The task-defined read butTer has overflowed\n");
+					//else if (SerialIO->IOSer.io_Error==SerErr_InvBaud) printf("The specified baud rate is invalid\n");
+					else if (SerialIO->IOSer.io_Error==SerErr_NoDSR) fprintf(stderr,"Data set ready signal was sent during data transfer\n");
+					//else if (SerialIO->IOSer.io_Error==SerErr_NoCTS) printf("Clear to send signal was sent during data transfer\n");
+					else if (SerialIO->IOSer.io_Error==SerErr_DetectedBreak) fprintf(stderr,"The system detected a queued or immediate break signal during data transfer\n");
+					errorDetected=1;
 				}
 				if (SerialIO->IOSer.io_Actual!=1) printf("Error, character not read: %lu\n",SerialIO->IOSer.io_Actual);
 			}
 
-			//size_t bytesWritten=fwrite(DataReadBuffer,bytesToRead,1,fh);
-			Write(fd,DataReadBuffer,bytesToRead);					
+			if (errorDetected==0) Write(fd,DataReadBuffer,bytesToRead);					
 			contBytes+=bytesToRead;
 		}
-		//fclose(fh);
 		Close(fd);
 	}
 	EnableTerminationMode(SerialIO);
-		
-	SendClear(SerialIO)	;
-	SendSerialMessage(SerialIO,"5","Send OK");
+	if (errorDetected==0)		
+		SendSerialMessage(SerialIO,"5","Send OK");
+	else
+	{
+		int tries=0;
+		int continueFlushing=1;
+		while (continueFlushing==1)
+		{
+			Delay(50);
+			SendFlush(SerialIO);
+			SendClear(SerialIO)	;
+						
+			int charsInBuffer=QuerySerialDeviceCharsLeft(SerialIO);
+			if (charsInBuffer==0)
+			{
+				if (VERBOSE) printf("No more chars detected... tries %d\n",tries);
+				tries++;
+			}
+			else
+			{
+				if (VERBOSE) printf("Resetting tries...");
+				tries=0;
+			}
+			if (tries>10)
+			{
+				SendSerialMessage(SerialIO,"6","Send KO");
+				continueFlushing=0;
+			}
+		}
+
+	}
 	SendClear(SerialIO)	;
 	SendSerialEndOfData(SerialIO);
 
@@ -1010,6 +1001,7 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 	UBYTE *buffer[11];
 	int trackCounter = 0;
 	int sectorCounter = 0;
+	char driveName[10];
 
 	SerialRead(SerialIO,"1","Getting trackdevice",TrackDeviceReadBuffer);
 	if (atoi(TrackDeviceReadBuffer)<MINTRACKDEVICES||atoi(TrackDeviceReadBuffer)>MAXTRACKDEVICES)
@@ -1031,6 +1023,10 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 		SendSerialMessageAndEOD(SerialIO,"6","End track number not entered correctly");
 		return ;
 	}
+
+	// Mark disk as busy
+	sprintf(driveName,"DF%d:",atoi(TrackDeviceReadBuffer));
+	Inhibit(driveName, TRUE);
 
 	// From now i am listening for incoming data
 	sprintf(command,"4 0 %d",CHUNK_DATA_READ);
@@ -1083,6 +1079,9 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 		}
 	}
 
+	// Release disk
+	Inhibit(driveName, FALSE);
+
 	for (cont=0;cont < 11 ; cont ++) FreeMem(buffer[cont], 512);
 	
 	// Restore termination mode
@@ -1090,9 +1089,6 @@ void Amiga_Write_Adf(struct IOExtSer* SerialIO)
 	
 	//Clear internal buffers
 	SendClear(SerialIO);
-
-	// Reload df0
-	ReloadDisk(atoi(TrackDeviceReadBuffer));
 
 	// Send confirmation
 	SendSerialMessageAndEOD(SerialIO,"5","Send OK");
