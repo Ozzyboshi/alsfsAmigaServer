@@ -1,16 +1,17 @@
 /*
- * Simple_Serial.c
+ * alsfssrv.c
  *
- * This is an example of using the serial device.  First, we will attempt
- * to create a message port with CreateMsgPort().  Next, we will attempt
- * to create the IORequest with CreateExtIO().  Then, we will attempt to
- * open the serial device with OpenDevice().  If successful, we will write
- * a NULL-terminated string to it and reverse our steps.  If we encounter
- * an error at any time, we will gracefully exit.
+ * This is the alsfs server meant to be run on the Amiga.
+ * It stays in memory as a daemon and responds to the Nodejs http server requests
+ * using the amiga serial port.
+ * 
+ * Tested on a real Amiga 600 unexpanded
  *
- * Compile with SAS C 5.10  lc -b1 -cfistq -v -y -L
- *
- * Run from CLI only
+ * Compile with vbcc, to setup a compile environment quickly use docker and ozzyboshi/vbcc image.
+ * for example : docker run -it -v #path where the sources are#:/data --rm  ozzyboshi/dockeramigavbcc make -f /data/Makefile
+ * 
+ * This program should work in any workbench release however it is tested only with Workbench 2.1 for now
+ * Use the -verobose comman line flag to ativate the debug messages
  */
 
 #include <exec/types.h>
@@ -72,6 +73,7 @@ void Amiga_Write_Adf(struct IOExtSer*);
 void Amiga_Send_List(struct IOExtSer*,char*);
 
 void Serial_Check_Floppy_Drive(struct IOExtSer*);
+void Serial_Relabel_Volume(struct IOExtSer*);
 void Serial_Amiga_Read_Adf(struct IOExtSer*);
 void Serial_Read_Content(struct IOExtSer*);
 
@@ -310,6 +312,11 @@ int main(int argc,char** argv)
 						else if (SerialReadBuffer[0]=='c' && SerialReadBuffer[1]=='h' && SerialReadBuffer[2]=='k' && SerialReadBuffer[3]=='f' && SerialReadBuffer[4]=='l' && SerialReadBuffer[5]=='o' && SerialReadBuffer[6]=='p' && SerialReadBuffer[7]=='p'&& SerialReadBuffer[8]=='y' && SerialReadBuffer[9]==4)
 						{
 							Serial_Check_Floppy_Drive(SerialIO);
+						}
+						// Relabel volume
+						else if (SerialReadBuffer[0]=='r' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='l' && SerialReadBuffer[3]=='a' && SerialReadBuffer[4]=='b' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]=='l' && SerialReadBuffer[7]==4)
+						{
+							Serial_Relabel_Volume(SerialIO);
 						}
 						else if (SerialReadBuffer[0]=='e' && SerialReadBuffer[1]=='x' && SerialReadBuffer[2]=='i' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 							terminate = 1;
@@ -954,12 +961,7 @@ void Serial_Amiga_Send_Stat(struct IOExtSer* SerialIO,char* path)
 void Serial_Check_Floppy_Drive(struct IOExtSer* SerialIO)
 {
 	char TrackDeviceReadBuffer[READ_BUFFER_SIZE];
-	SendSerialMessageAndEOD(SerialIO,"1","Getting trackdevice");
-	// Read trackdevice from serial port
-	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
-	SerialIO->IOSer.io_Command  = CMD_READ;
-	SerialIO->IOSer.io_Data     = (APTR)&TrackDeviceReadBuffer[0];
-	DoIO((struct IORequest *)SerialIO);
+	SerialRead(SerialIO,"1","Getting trackdevice",TrackDeviceReadBuffer);
 	int trackDevice = atoi(TrackDeviceReadBuffer);
 	if (trackDevice<MINTRACKDEVICES||trackDevice>MAXTRACKDEVICES)
 	{
@@ -981,6 +983,51 @@ void Serial_Check_Floppy_Drive(struct IOExtSer* SerialIO)
 	{
 		SendSerialMessageAndEOD(SerialIO,"9","Drive not recognized");
 	}
+	return ;
+}
+
+void Serial_Relabel_Volume(struct IOExtSer* SerialIO)
+{
+	struct VolumeInfo* ptr;
+	struct VolumeInfo* freePtr;
+	struct VolumeInfo* volinfoHead=NULL;
+	char VolumeReadBuffer[READ_BUFFER_SIZE];
+	char NewNameReadBuffer[READ_BUFFER_SIZE];
+	int found=0;
+	char completeName[257];
+
+	SerialRead(SerialIO,"1","Getting volume name",VolumeReadBuffer);
+	if (VolumeReadBuffer[strlen(VolumeReadBuffer)-1]!=':') strcat(VolumeReadBuffer,":");
+	SerialRead(SerialIO,"2","Getting new name",NewNameReadBuffer);
+
+	if (VERBOSE) printf("Relabeling volume '%s' in '%s'\n",VolumeReadBuffer,NewNameReadBuffer);
+
+	volinfoHead=getVolumes(DLT_VOLUME);
+	ptr=volinfoHead;
+	while (!found&&ptr)
+	{
+		sprintf(completeName,"%s:",ptr->name);
+		if (!strcmp(VolumeReadBuffer,completeName))
+			found=1;
+		ptr=ptr->next;
+	}
+	ptr=volinfoHead;
+	while (ptr!=NULL)
+	{
+		freePtr=ptr->next;
+		free(ptr);
+		ptr=freePtr;
+	}
+	if (!found)
+	{
+		SendSerialMessageAndEOD(SerialIO,"5","KO");
+		return ;
+	}
+
+	if (Relabel(VolumeReadBuffer,NewNameReadBuffer))
+		SendSerialMessageAndEOD(SerialIO,"3","OK");
+	else
+		SendSerialMessageAndEOD(SerialIO,"4","KO");
 	return ;
 }
 
