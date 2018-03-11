@@ -90,12 +90,6 @@ int main(int argc,char** argv)
 	int bytesToRead = 0;
 	VERBOSE=0;
 
-	struct IOTArray Terminators =
-	{
-		0x04040403,   /*  etx eot */
-		0x03030303    /* fill to end with lowest value */
-	};
-
    	char SerialReadBuffer[READ_BUFFER_SIZE]; /* Reserve SIZE bytes */
 	char FilenameReadBuffer[READ_BUFFER_SIZE];
 	char FilesizeReadBuffer[READ_BUFFER_SIZE];
@@ -125,7 +119,7 @@ int main(int argc,char** argv)
 				
 				// Start of cmd reading
 				SerialIO->io_SerFlags |= SERF_EOFMODE;
-				SerialIO->io_TermArray = Terminators;
+				SerialIO->io_TermArray = TERMINATORS_CHARACTERS;
 				
 				SerialIO->io_SerFlags      |= SERF_XDISABLED;
 				SerialIO->io_Baud           = 19200;
@@ -140,7 +134,7 @@ int main(int argc,char** argv)
 						for (cont=0;cont<READ_BUFFER_SIZE;cont++)
                 					SerialReadBuffer[cont]=0;
                 		SerialIO->io_SerFlags |= SERF_EOFMODE;
-						SerialIO->io_TermArray = Terminators;
+						SerialIO->io_TermArray = TERMINATORS_CHARACTERS;
 						SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
 		   				SerialIO->IOSer.io_Data     = (APTR)&SerialReadBuffer[0];
 		   				SerialIO->IOSer.io_Command  = CMD_READ;
@@ -321,17 +315,46 @@ void Amiga_Rename_File_Drawer(struct IOExtSer* SerialIO)
 {
 	char FilenameReadBuffer[SERIAL_BUFFER_SIZE];
 	char FilenameReadBuffer2[SERIAL_BUFFER_SIZE];
+	char VolumeBuffer[SERIAL_BUFFER_SIZE];
+	char VolumeBuffer2[SERIAL_BUFFER_SIZE];
+	char cmdCopy[20+SERIAL_BUFFER_SIZE*2];
+	BOOL result;
+
 	SerialRead(SerialIO,"1","Getting old filename",FilenameReadBuffer);
 	SerialRead(SerialIO,"2","Getting new filename",FilenameReadBuffer2);
-	
-	if (!Rename(FilenameReadBuffer,FilenameReadBuffer2))
+
+	getVolumeName(FilenameReadBuffer,SERIAL_BUFFER_SIZE, VolumeBuffer);
+	getVolumeName(FilenameReadBuffer2,SERIAL_BUFFER_SIZE, VolumeBuffer2);
+
+	if (strcmp(VolumeBuffer,VolumeBuffer2))
 	{
-		fprintf(stderr,"Error in renaming %s\n",FilenameReadBuffer);
-		SendSerialMessage(SerialIO,"KO","KO");
+		sprintf(cmdCopy,"COPY \"%s\" TO \"%s\" ALL CLONE QUIET",FilenameReadBuffer,FilenameReadBuffer2);
+		if (VERBOSE) printf("%s",cmdCopy);
+		result = system(cmdCopy);
+		if (VERBOSE) printf(result ? "true" : "false");
+		if (result)
+		{
+			fprintf(stderr,"Error in renaming %s\n",FilenameReadBuffer);
+			SendSerialMessage(SerialIO,"KO","KO");
+		}
+		else
+		{
+			sprintf(cmdCopy,"DELETE \"%s\" FORCE QUIET ALL",FilenameReadBuffer);
+			system(cmdCopy);
+			SendSerialMessage(SerialIO,"OK","OK");
+		}
 	}
 	else
 	{
-		SendSerialMessage(SerialIO,"OK","OK");
+		if (!Rename(FilenameReadBuffer,FilenameReadBuffer2))
+		{
+			fprintf(stderr,"Error in renaming %s\n",FilenameReadBuffer);
+			SendSerialMessage(SerialIO,"KO","KO");
+		}
+		else
+		{
+			SendSerialMessage(SerialIO,"OK","OK");
+		}
 	}
 	sendSerialEndOfData(SerialIO);	
 	return ;
@@ -341,43 +364,43 @@ void Amiga_Rename_File_Drawer(struct IOExtSer* SerialIO)
 // Create an empty drawer
 void Amiga_Create_Empty_Drawer(struct IOExtSer* SerialIO)
 {
-		BPTR lock;
-		char FilenameReadBuffer[READ_BUFFER_SIZE];
-		int cont;
+	BPTR lock;
+	char FilenameReadBuffer[READ_BUFFER_SIZE];
+	int cont;
 		
-		/* Init buffer with zeroes */
-		for (cont=0;cont<READ_BUFFER_SIZE;cont++)
-		{
-			FilenameReadBuffer[cont]=0;
-		}
-		SendSerialMessage(SerialIO,"1","Getting filename");
-		SendSerialEndOfData(SerialIO);
+	/* Init buffer with zeroes */
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		FilenameReadBuffer[cont]=0;
+	}
+	SendSerialMessage(SerialIO,"1","Getting filename");
+	SendSerialEndOfData(SerialIO);
 
-		// Read filename from serial port
-		SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
-		SerialIO->IOSer.io_Command  = CMD_READ;
-		SerialIO->IOSer.io_Data     = (APTR)&FilenameReadBuffer[0];
-		DoIO((struct IORequest *)SerialIO);
-		if (VERBOSE) printf("Received : ##%s##\n",FilenameReadBuffer);
+	// Read filename from serial port
+	SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
+	SerialIO->IOSer.io_Command  = CMD_READ;
+	SerialIO->IOSer.io_Data     = (APTR)&FilenameReadBuffer[0];
+	DoIO((struct IORequest *)SerialIO);
+	if (VERBOSE) printf("Received : ##%s##\n",FilenameReadBuffer);
 	
-		for (cont=0;cont<READ_BUFFER_SIZE;cont++)
-		{
-			if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
-		}
+	for (cont=0;cont<READ_BUFFER_SIZE;cont++)
+	{
+		if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
+	}
 		
-		lock = CreateDir (FilenameReadBuffer);
-		if (!lock)
-		{
-			printf("Error in creating %s\n",FilenameReadBuffer);
-			SendSerialMessage(SerialIO,"KO","KO");
-		}
-		else
-		{
-			UnLock(lock);
-			SendSerialMessage(SerialIO,"OK","OK");
-		}
-		sendSerialEndOfData(SerialIO);
-		return ;
+	lock = CreateDir (FilenameReadBuffer);
+	if (!lock)
+	{
+		printf("Error in creating %s\n",FilenameReadBuffer);
+		SendSerialMessage(SerialIO,"KO","KO");
+	}
+	else
+	{
+		UnLock(lock);
+		SendSerialMessage(SerialIO,"OK","OK");
+	}
+	sendSerialEndOfData(SerialIO);
+	return ;
 }
 
 // Create an empty file
@@ -422,7 +445,7 @@ void Amiga_Create_Empty_File(struct IOExtSer* SerialIO)
 	return ;
 }
 
-// Create an empty file
+// Delete a file
 void Amiga_Delete(struct IOExtSer* SerialIO)
 {
 	char FilenameReadBuffer[READ_BUFFER_SIZE];
@@ -565,12 +588,6 @@ void Amiga_Read_File(struct IOExtSer* SerialIO)
 	int bytesToRead;
 	struct Amiga_Stat* stat;
 	int fileRealLength;
-	
-	struct IOTArray Terminators =
-	{
-		0x04040403,   /*  etx eot */
-		0x03030303    /* fill to end with lowest value */
-	};
 
 	SerialRead(SerialIO,"1","Getting old filename",FilenameReadBuffer);
 	SerialRead(SerialIO,"2","Getting size",SizeReadBuffer);
@@ -650,12 +667,7 @@ void Amiga_Read_File(struct IOExtSer* SerialIO)
 			
 			fclose(fh);
 			
-			// Restore termination mode
-			SerialIO->io_SerFlags |= SERF_EOFMODE;
-			SerialIO->io_TermArray = Terminators;
-			SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
-			if (DoIO((struct IORequest *)SerialIO))
-				printf("Set Params failed ");   /* Inform user of error */
+			EnableTerminationMode(SerialIO);
 		}
 	}
 	else printf("File not found");

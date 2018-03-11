@@ -297,3 +297,18 @@ void BSTR2C(BSTR string, UBYTE* s)
   }
   s[i] = 0 ;
 }
+
+void getVolumeName(const char* fullPath,const int size,char* out)
+{
+	int cont;
+	for (cont=0;cont<size;cont++)
+	{
+		if (fullPath[cont]==':'||fullPath[cont]==0)
+		{
+			out[cont]=0;
+			break;
+		}
+		else out[cont]=fullPath[cont];
+	}
+	return ;
+}

@@ -26,5 +26,6 @@ struct VolumeInfo* getVolumes(const int);
 
 //Helpers
 void BSTR2C(BSTR,UBYTE*);
+void getVolumeName(const char*,const int, char*);
 
 
