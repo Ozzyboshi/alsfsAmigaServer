@@ -40,8 +40,8 @@ int Amiga_Read_Adf_Data(int devicenum,int length,int offset,UBYTE ** out)
 				int sec;
 				ioreq->io_Command = CMD_READ;
 				ioreq->io_Length = length;		
-			    ioreq->io_Data = buffer;
-			    if (VERBOSE) printf("Reading at location %d for %d bytes\n",offset,length);
+				ioreq->io_Data = buffer;
+				if (VERBOSE) printf("Reading at location %d for %d bytes\n",offset,length);
 				ioreq->io_Offset = offset;
 				if (DoIO( (struct IORequest *) ioreq))
 				{
@@ -88,22 +88,21 @@ void Amiga_Write_Adf_Track(int track,UBYTE ** buffer,int devicenum)
 				ioreq->io_Command = CMD_WRITE;
 				ioreq->io_Length = 512;
 				
-				
-		    	for (sec = 0; sec < sectors; sec++) 
-		    	{
-					fflush(stdout);
+			    	for (sec = 0; sec < sectors; sec++) 
+			    	{
+						fflush(stdout);
 						
-			    	ioreq->io_Data = buffer[sec];
-			    	if (VERBOSE) printf("Writing at location %d\n",512 * (track * sectors + sec));
+				    	ioreq->io_Data = buffer[sec];
+				    	if (VERBOSE) printf("Writing at location %d\n",512 * (track * sectors + sec));
 					ioreq->io_Offset = 512 * (track * sectors + sec);
 					if (DoIO( (struct IORequest *) ioreq))
 					{
 						fprintf(stderr,"Write failed.  Error %d\n",ioreq->io_Error);
 					}
-		    	}
+			    	}
 				
 				ioreq->io_Command = CMD_UPDATE;
-		    	DoIO( (struct IORequest *) ioreq);
+			    	DoIO( (struct IORequest *) ioreq);
 
 				ioreq->io_Command = TD_MOTOR;	/* Turn Disk-motor off */
 				ioreq->io_Length = 0;
@@ -114,7 +113,7 @@ void Amiga_Write_Adf_Track(int track,UBYTE ** buffer,int devicenum)
 			else
 			{
 				fprintf(stderr,"Unable to open %s unit %d\n", devicename, devicenum);
-	    		//DeleteStdIO(ioreq);
+	    			//DeleteStdIO(ioreq);
 			}
 			DeleteStdIO(ioreq);
 		}
@@ -201,6 +200,7 @@ struct ContentInfo* getContentList(char* path)
 			    newObj->type=0;
 			else
 			    newObj->type=1;
+			sprintf(newObj->statInfo,"%ld %ld %d %ld %ld %ld",FIB->fib_Size,FIB->fib_NumBlocks,FIB->fib_DirEntryType>0?1:0,FIB->fib_Date.ds_Days,FIB->fib_Date.ds_Minute,FIB->fib_Date.ds_Tick);
 			newObj->next=NULL;
 			if (continfoHead==NULL) continfoHead=newObj;
 			else
@@ -284,6 +284,35 @@ struct VolumeInfo* getVolumes(const int flag)
 	}
 	CloseLibrary( (struct Library *)DOSBase);
 	return volinfoHead;
+}
+
+// Read file or directory attribute
+struct Amiga_Stat* Amiga_Get_Stat(char* path)
+{
+	struct Amiga_Stat* out=NULL;
+	struct FileInfoBlock * FIB;
+	BPTR lock;
+	lock = Lock(path, ACCESS_READ);
+	if (!lock)
+	{
+		if (VERBOSE) printf("File %s not readable\n",path);
+		return NULL;
+	}
+	FIB = AllocVec(sizeof(struct FileInfoBlock), MEMF_CLEAR);
+	if (FIB)
+	{
+		Examine(lock, FIB);
+		out = malloc (sizeof(struct Amiga_Stat));
+		out->st_size=FIB->fib_Size;
+		out->st_blksize=FIB->fib_NumBlocks;
+		out->directory=FIB->fib_DirEntryType>0?1:0;
+		out->days=FIB->fib_Date.ds_Days;
+		out->minutes=FIB->fib_Date.ds_Minute;
+		out->seconds=FIB->fib_Date.ds_Tick;
+	}
+	FreeVec(FIB);
+	UnLock(lock);
+	return out;
 }
 
 void BSTR2C(BSTR string, UBYTE* s)

@@ -43,22 +43,6 @@
 #define MINTRACKDEVICES 0 
 #define MAXTRACKDEVICES 4 // Max number of trackdevices recognized by AmigaDOS
 
-// Data structure to hold information about a file or directory
-struct Amiga_Stat
-{
-	long st_size;
-	long st_blksize;
-	int directory;
-	long days;
-	long minutes;
-	long seconds;
-};
-
-// Amiga functions
-struct Amiga_Stat* Amiga_Get_Stat(char*);
-
-void sendSerialEndOfData(struct IOExtSer*);
-
 // Serial functions
 void Amiga_Store_Data(struct IOExtSer*);
 void Amiga_Create_Empty_File(struct IOExtSer*);
@@ -90,7 +74,7 @@ int main(int argc,char** argv)
 	int bytesToRead = 0;
 	VERBOSE=0;
 
-   	char SerialReadBuffer[READ_BUFFER_SIZE]; /* Reserve SIZE bytes */
+	char SerialReadBuffer[READ_BUFFER_SIZE]; /* Reserve SIZE bytes */
 	char FilenameReadBuffer[READ_BUFFER_SIZE];
 	char FilesizeReadBuffer[READ_BUFFER_SIZE];
 	char DataReadBuffer[CHUNK_DATA_READ];
@@ -107,39 +91,38 @@ int main(int argc,char** argv)
 	/* Create the message port */
 	if (SerialMP=CreateMsgPort())
 	{
-    	/* Create the IORequest */
-    	if (SerialIO = (struct IOExtSer *) CreateExtIO(SerialMP,sizeof(struct IOExtSer)))
-        {
-        	/* Open the serial device */
-        	if (OpenDevice(SERIALNAME,0,(struct IORequest *)SerialIO,0L))
-				printf("Error: %s did not open\n",SERIALNAME);
-        	else
-            {
-            	SendClear(SerialIO);
+	    	/* Create the IORequest */
+	    	if (SerialIO = (struct IOExtSer *) CreateExtIO(SerialMP,sizeof(struct IOExtSer)))
+		{
+			/* Open the serial device */
+			if (OpenDevice(SERIALNAME,0,(struct IORequest *)SerialIO,0L))
+					printf("Error: %s did not open\n",SERIALNAME);
+			else
+		    	{
+		    		SendClear(SerialIO);
 				
 				// Start of cmd reading
 				SerialIO->io_SerFlags |= SERF_EOFMODE;
-				SerialIO->io_TermArray = TERMINATORS_CHARACTERS;
-				
+				SerialIO->io_TermArray = TERMINATORS_CHARACTERS;				
 				SerialIO->io_SerFlags      |= SERF_XDISABLED;
 				SerialIO->io_Baud           = 19200;
 				
 				SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
 				if (DoIO((struct IORequest *)SerialIO))
-               		printf("Set Params failed ");   /* Inform user of error */
+		       			printf("Set Params failed ");   /* Inform user of error */
 				else
 				{
 					while (terminate==0)
 					{
-						for (cont=0;cont<READ_BUFFER_SIZE;cont++)
-                					SerialReadBuffer[cont]=0;
-                		SerialIO->io_SerFlags |= SERF_EOFMODE;
+						for (cont=0;cont<READ_BUFFER_SIZE;cont++) SerialReadBuffer[cont]=0;
+		        			SerialIO->io_SerFlags |= SERF_EOFMODE;
 						SerialIO->io_TermArray = TERMINATORS_CHARACTERS;
 						SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
-		   				SerialIO->IOSer.io_Data     = (APTR)&SerialReadBuffer[0];
-		   				SerialIO->IOSer.io_Command  = CMD_READ;
+			   			SerialIO->IOSer.io_Data     = (APTR)&SerialReadBuffer[0];
+			   			SerialIO->IOSer.io_Command  = CMD_READ;
+
 						if (VERBOSE) printf("Waiting for a %d characters command\n",READ_BUFFER_SIZE);
-		   				DoIO((struct IORequest *)SerialIO);
+			   			DoIO((struct IORequest *)SerialIO);
 						if (VERBOSE) printf("Recv : ##%s##\n",SerialReadBuffer);
 
 						// Start of vols command to list all volumes of the Amiga
@@ -156,7 +139,6 @@ int main(int argc,char** argv)
 						else if (SerialReadBuffer[0]=='s' && SerialReadBuffer[1]=='t' && SerialReadBuffer[2]=='a' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 						{
 							SerialRead(SerialIO,"1","Getting filename",FilenameReadBuffer);
-							for (cont=0;cont<READ_BUFFER_SIZE;cont++) if (FilenameReadBuffer[cont]==4) {FilenameReadBuffer[cont]=0;}
 							Serial_Amiga_Send_Stat(SerialIO,FilenameReadBuffer);
 						}
 						// Start content read of volume or directory (list cmd)
@@ -202,12 +184,12 @@ int main(int argc,char** argv)
 						{
 							Serial_Amiga_Read_Adf(SerialIO);
 						}
-						// Check floppy drive presence 'chkfloppy command'
+							// Check floppy drive presence 'chkfloppy command'
 						else if (SerialReadBuffer[0]=='c' && SerialReadBuffer[1]=='h' && SerialReadBuffer[2]=='k' && SerialReadBuffer[3]=='f' && SerialReadBuffer[4]=='l' && SerialReadBuffer[5]=='o' && SerialReadBuffer[6]=='p' && SerialReadBuffer[7]=='p'&& SerialReadBuffer[8]=='y' && SerialReadBuffer[9]==4)
 						{
 							Serial_Check_Floppy_Drive(SerialIO);
 						}
-						// Relabel volume
+							// Relabel volume
 						else if (SerialReadBuffer[0]=='r' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='l' && SerialReadBuffer[3]=='a' && SerialReadBuffer[4]=='b' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]=='l' && SerialReadBuffer[7]==4)
 						{
 							Serial_Relabel_Volume(SerialIO);
@@ -222,64 +204,19 @@ int main(int argc,char** argv)
 					}
 				}
 
-			    /* Close the serial device */
-			    CloseDevice((struct IORequest *)SerialIO);
-            }
+				/* Close the serial device */
+				CloseDevice((struct IORequest *)SerialIO);
+		    	}
 			/* Delete the IORequest */
 			DeleteExtIO((struct IORequest *)SerialIO);
 		}
-		else
-			fprintf(stderr,"Error: Could create IORequest\n");
+		else fprintf(stderr,"Error: Could create IORequest\n");
 
-    	/* Delete the message port */
-    	DeleteMsgPort(SerialMP);
-    }
-	else
-    	fprintf(stderr,"Error: Could not create message port\n");
-
+		/* Delete the message port */
+		DeleteMsgPort(SerialMP);
+	}
+	else fprintf(stderr,"Error: Could not create message port\n");
 	return 0;
-}
-
-void sendSerialEndOfData(struct IOExtSer* SerialIO)
-{
-	char buffer[2];
-	buffer[0]=3;
-	buffer[1]=0;
-	SerialIO->IOSer.io_Length   = 1;
-	SerialIO->IOSer.io_Command  = CMD_WRITE;
-	SerialIO->IOSer.io_Data     = (APTR)&buffer[0];
-	if (VERBOSE) printf("ETX (end of text) sent\n");
-	if (DoIO((struct IORequest *)SerialIO)) printf("Write failed.  Error - %d\n",SerialIO->IOSer.io_Error);
-	return ;
-}
-
-// Read file or directory attribute
-struct Amiga_Stat* Amiga_Get_Stat(char* path)
-{
-	struct Amiga_Stat* out=NULL;
-	struct FileInfoBlock * FIB;
-	BPTR lock;
-	lock = Lock(path, ACCESS_READ);
-	if (!lock)
-	{
-		if (VERBOSE) printf("File %s not readable\n",path);
-		return NULL;
-	}
-	FIB = AllocVec(sizeof(struct FileInfoBlock), MEMF_CLEAR);
-	if (FIB)
-	{
-		Examine(lock, FIB);
-		out = malloc (sizeof(struct Amiga_Stat));
-		out->st_size=FIB->fib_Size;
-		out->st_blksize=FIB->fib_NumBlocks;
-		out->directory=FIB->fib_DirEntryType>0?1:0;
-		out->days=FIB->fib_Date.ds_Days;
-		out->minutes=FIB->fib_Date.ds_Minute;
-		out->seconds=FIB->fib_Date.ds_Tick;
-	}
-	FreeVec(FIB);
-	UnLock(lock);
-	return out;
 }
 
 void Amiga_Send_vols(struct IOExtSer* SerialIO,int flag)
@@ -356,7 +293,7 @@ void Amiga_Rename_File_Drawer(struct IOExtSer* SerialIO)
 			SendSerialMessage(SerialIO,"OK","OK");
 		}
 	}
-	sendSerialEndOfData(SerialIO);	
+	SendSerialEndOfData(SerialIO);	
 	return ;
 }
 
@@ -399,7 +336,7 @@ void Amiga_Create_Empty_Drawer(struct IOExtSer* SerialIO)
 		UnLock(lock);
 		SendSerialMessage(SerialIO,"OK","OK");
 	}
-	sendSerialEndOfData(SerialIO);
+	SendSerialEndOfData(SerialIO);
 	return ;
 }
 
@@ -441,7 +378,7 @@ void Amiga_Create_Empty_File(struct IOExtSer* SerialIO)
 		fclose(fh);
 		SendSerialMessage(SerialIO,"OK","OK");
 	}
-	sendSerialEndOfData(SerialIO);
+	SendSerialEndOfData(SerialIO);
 	return ;
 }
 
@@ -483,7 +420,7 @@ void Amiga_Delete(struct IOExtSer* SerialIO)
 	{							
 		SendSerialMessage(SerialIO,"OK","OK");
 	}
-	sendSerialEndOfData(SerialIO);
+	SendSerialEndOfData(SerialIO);
 	return ;
 }
 
@@ -831,39 +768,9 @@ void Serial_Amiga_Send_Stat(struct IOExtSer* SerialIO,char* path)
 	struct Amiga_Stat* stat;
 	stat = Amiga_Get_Stat(path);
 	if (stat)
-	{
-		//for (cont=0;cont<1000;cont++) app[cont]=0;
-		
-		sprintf(app,"%ld",stat->st_size);
-		if (VERBOSE) printf("Sent %s as size\n",app);
+	{	
+		sprintf(app,"%ld %ld %d %ld %ld %ld",stat->st_size,stat->st_blksize,stat->directory,stat->days,stat->minutes,stat->seconds);
 		SendSerialMessage(SerialIO,app,app);
-		SendSerialNewLine(SerialIO);
-		for (cont=0;cont<100;cont++) app[cont]=0;
-		sprintf(app,"%ld",stat->st_blksize);
-		if (VERBOSE) printf("Sent %s as block size\n",app);
-		SendSerialMessage(SerialIO,app,app);
-		SendSerialNewLine(SerialIO);
-		
-		sprintf(app,"%d",stat->directory);
-		if (VERBOSE) printf("Sent %s as directory\n",app);
-		SendSerialMessage(SerialIO,app,app);
-		SendSerialNewLine(SerialIO);
-		
-		sprintf(app,"%ld",stat->days);
-		if (VERBOSE) printf("Sent %s as days\n",app);
-		SendSerialMessage(SerialIO,app,app);
-		SendSerialNewLine(SerialIO);
-		
-		sprintf(app,"%ld",stat->minutes);
-		if (VERBOSE) printf("Sent %s as minutes\n",app);
-		SendSerialMessage(SerialIO,app,app);
-		SendSerialNewLine(SerialIO);
-		
-		sprintf(app,"%ld",stat->seconds);
-		if (VERBOSE) printf("Sent %s as seconds\n",app);
-		SendSerialMessage(SerialIO,app,app);
-		SendSerialNewLine(SerialIO);
-		
 		free(stat);
 	}
 	SendSerialEndOfData(SerialIO);
@@ -1067,6 +974,8 @@ void Amiga_Send_List(struct IOExtSer* SerialIO,char* path)
 	while (ptr)
 	{
 		//printf("%s\n",ptr->name);
+		SendSerialMessage(SerialIO,ptr->statInfo,ptr->statInfo);
+		SendSerialMessage(SerialIO," ","-");
 		SendSerialMessage(SerialIO,ptr->fileName,ptr->fileName);
 		SendSerialNewLine(SerialIO);
 		ptr=ptr->next;
