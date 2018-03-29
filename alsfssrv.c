@@ -51,6 +51,7 @@ void Amiga_Create_Empty_Drawer(struct IOExtSer*);
 void Amiga_Rename_File_Drawer(struct IOExtSer*);
 void Amiga_Send_vols(struct IOExtSer*,const int);
 void Serial_Amiga_Send_Stat(struct IOExtSer*,char*);
+void Serial_Amiga_Send_Statfs(struct IOExtSer*,const char* const);
 void Amiga_Read_File(struct IOExtSer*);
 void Amiga_Delay(struct IOExtSer*);
 void Amiga_Write_Adf(struct IOExtSer*);
@@ -60,6 +61,7 @@ void Serial_Check_Floppy_Drive(struct IOExtSer*);
 void Serial_Relabel_Volume(struct IOExtSer*);
 void Serial_Amiga_Read_Adf(struct IOExtSer*);
 void Serial_Read_Content(struct IOExtSer*);
+void Amiga_Keypress(struct IOExtSer*);
 
 int main(int argc,char** argv)
 {
@@ -67,19 +69,11 @@ int main(int argc,char** argv)
 	int cont=0;
 	struct MsgPort *SerialMP;       /* pointer to our message port */
 	struct IOExtSer* SerialIO;      /* pointer to our IORequest */
-	struct VolumeInfo* vols;
 	int terminate = 0;
-	int contBytes = 0;
-	int fileSize = 0;
-	int bytesToRead = 0;
-	VERBOSE=0;
 
 	char SerialReadBuffer[READ_BUFFER_SIZE]; /* Reserve SIZE bytes */
 	char FilenameReadBuffer[READ_BUFFER_SIZE];
 	char FilesizeReadBuffer[READ_BUFFER_SIZE];
-	char DataReadBuffer[CHUNK_DATA_READ];
-
-	FILE* fh;
 
 	// Set verbosity
 	if (argc>1 && (!strcmp(argv[1],"-verbose")||!strcmp(argv[1],"-v")))
@@ -87,41 +81,43 @@ int main(int argc,char** argv)
 		VERBOSE=1;
 		printf("Verbosity set to %d\n",VERBOSE);
 	}
+	else 	VERBOSE=0;
 
 	/* Create the message port */
 	if (SerialMP=CreateMsgPort())
 	{
-	    	/* Create the IORequest */
-	    	if (SerialIO = (struct IOExtSer *) CreateExtIO(SerialMP,sizeof(struct IOExtSer)))
+		/* Create the IORequest */
+		if (SerialIO = (struct IOExtSer *) CreateExtIO(SerialMP,sizeof(struct IOExtSer)))
 		{
 			/* Open the serial device */
 			if (OpenDevice(SERIALNAME,0,(struct IORequest *)SerialIO,0L))
-					printf("Error: %s did not open\n",SERIALNAME);
+				printf("Error: %s did not open\n",SERIALNAME);
 			else
-		    	{
-		    		SendClear(SerialIO);
-				
+			{
+				SendClear(SerialIO);
+			
 				// Start of cmd reading
 				SerialIO->io_SerFlags |= SERF_EOFMODE;
 				SerialIO->io_TermArray = TERMINATORS_CHARACTERS;				
 				SerialIO->io_SerFlags      |= SERF_XDISABLED;
 				SerialIO->io_Baud           = 19200;
-				
+			
 				SerialIO->IOSer.io_Command  = SDCMD_SETPARAMS;
 				if (DoIO((struct IORequest *)SerialIO))
-		       			printf("Set Params failed ");   /* Inform user of error */
+			   			printf("Set Params failed ");   /* Inform user of error */
 				else
 				{
 					while (terminate==0)
 					{
 						for (cont=0;cont<READ_BUFFER_SIZE;cont++) SerialReadBuffer[cont]=0;
-		        			SerialIO->io_SerFlags |= SERF_EOFMODE;
+			    			SerialIO->io_SerFlags |= SERF_EOFMODE;
+
 						SerialIO->io_TermArray = TERMINATORS_CHARACTERS;
 						SerialIO->IOSer.io_Length   = READ_BUFFER_SIZE-1;
 			   			SerialIO->IOSer.io_Data     = (APTR)&SerialReadBuffer[0];
 			   			SerialIO->IOSer.io_Command  = CMD_READ;
 
-						if (VERBOSE) printf("Waiting for a %d characters command\n",READ_BUFFER_SIZE);
+						if (VERBOSE) printf("Waiting for a %d characters command - debug %d\n",READ_BUFFER_SIZE,VERBOSE);
 			   			DoIO((struct IORequest *)SerialIO);
 						if (VERBOSE) printf("Recv : ##%s##\n",SerialReadBuffer);
 
@@ -194,6 +190,17 @@ int main(int argc,char** argv)
 						{
 							Serial_Relabel_Volume(SerialIO);
 						}
+						// Emulate keyboard press
+						else if (SerialReadBuffer[0]=='k' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='y' && SerialReadBuffer[3]=='p' && SerialReadBuffer[4]=='r' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]=='s' && SerialReadBuffer[7]=='s' && SerialReadBuffer[8]==4)
+						{
+							Amiga_Keypress(SerialIO);
+						}
+						// Start stat filesystem
+						else if (SerialReadBuffer[0]=='s' && SerialReadBuffer[1]=='t' && SerialReadBuffer[2]=='a' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]=='f' && SerialReadBuffer[5]=='s' && SerialReadBuffer[6]==4)
+						{
+							SerialRead(SerialIO,"1","Getting filename",FilenameReadBuffer);
+							Serial_Amiga_Send_Statfs(SerialIO,(const char* const)FilenameReadBuffer);
+						}
 						else if (SerialReadBuffer[0]=='e' && SerialReadBuffer[1]=='x' && SerialReadBuffer[2]=='i' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]==4)
 							terminate = 1;
 						else if (strlen(SerialReadBuffer)>0)
@@ -206,7 +213,7 @@ int main(int argc,char** argv)
 
 				/* Close the serial device */
 				CloseDevice((struct IORequest *)SerialIO);
-		    	}
+	    	}
 			/* Delete the IORequest */
 			DeleteExtIO((struct IORequest *)SerialIO);
 		}
@@ -217,6 +224,30 @@ int main(int argc,char** argv)
 	}
 	else fprintf(stderr,"Error: Could not create message port\n");
 	return 0;
+}
+
+void Amiga_Keypress(struct IOExtSer* SerialIO)
+{
+	Disable();
+	volatile UBYTE* boh = (volatile UBYTE*) 0xbfe401;
+	volatile UBYTE* boh2 = (volatile UBYTE*) 0xbfe501;
+	volatile UBYTE* boh3 = (volatile UBYTE*) 0xbfee01;
+	volatile UBYTE* boh4 = (volatile UBYTE*) 0xbfec01;
+	*boh=10;
+	*boh2=0;
+	*boh3=65;
+	*boh4=~(0x20<<1+0);
+	Delay(10);
+	Enable();
+	Disable();
+	*boh=10;
+	*boh2=0;
+	*boh3=65;
+	*boh4=~((0x20<<1)+1);
+	Delay(10);
+	Enable();
+	SendSerialEndOfData(SerialIO);
+	return;
 }
 
 void Amiga_Send_vols(struct IOExtSer* SerialIO,int flag)
@@ -770,6 +801,53 @@ void Serial_Amiga_Send_Stat(struct IOExtSer* SerialIO,char* path)
 	if (stat)
 	{	
 		sprintf(app,"%ld %ld %d %ld %ld %ld",stat->st_size,stat->st_blksize,stat->directory,stat->days,stat->minutes,stat->seconds);
+		SendSerialMessage(SerialIO,app,app);
+		free(stat);
+	}
+	SendSerialEndOfData(SerialIO);
+	return ;
+}
+
+// Send the inode info of a file or directory via serial cable
+void Serial_Amiga_Send_Statfs(struct IOExtSer* SerialIO,const char* const path)
+{
+	char app[1000];
+	int cont=0;
+	int found=0;
+	struct VolumeInfo* ptr;
+	struct VolumeInfo* freePtr;
+	struct VolumeInfo* volinfoHead=NULL;
+
+	// Check if the volume exists
+	while (path[cont]!=':' && path[cont]!=0)
+		cont++;
+	snprintf(app,cont+1,"%s",path);
+	volinfoHead=getVolumes(DLT_VOLUME);
+	ptr=volinfoHead;
+	while (!found&&ptr)
+	{
+		if (!strcmp(app,ptr->name))
+			found=1;
+		ptr=ptr->next;
+	}
+	ptr=volinfoHead;
+	while (ptr!=NULL)
+	{
+		freePtr=ptr->next;
+		free(ptr);
+		ptr=freePtr;
+	}
+	if (!found)
+	{
+		SendSerialEndOfData(SerialIO);
+		return ;
+	}
+
+	struct Amiga_Statfs* stat;
+	stat = getStatFs((char*)path);
+	if (stat)
+	{	
+		sprintf(app,"%ld %ld %ld",stat->st_blksize,stat->st_numblocks,stat->st_numblocksused);
 		SendSerialMessage(SerialIO,app,app);
 		free(stat);
 	}

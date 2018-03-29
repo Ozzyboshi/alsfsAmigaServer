@@ -227,15 +227,9 @@ struct VolumeInfo* getVolumes(const int flag)
 	struct DosInfo* dosInfoPtr;
 	struct DevInfo* devInfoPtr;
 	struct DevInfo* navigator;
-	static struct VolumeInfo volInfoOut[10];
 	struct VolumeInfo* newObj;
 	struct VolumeInfo* ptrHead;
 	struct VolumeInfo* volinfoHead=NULL;
-	
-	int cont=0;
-	for (cont=0;cont<10;cont++)
-		BSTR2C(0,volInfoOut[cont].name);
-	cont=0;
 
 	if ((DOSBase = (struct DosLibrary*)OpenLibrary("dos.library",37)))
 	{
@@ -245,20 +239,14 @@ struct VolumeInfo* getVolumes(const int flag)
 			dosInfoPtr=(struct DosInfo*)BADDR(root->rn_Info);
 			if (dosInfoPtr)
 			{
-
 				devInfoPtr=(struct DevInfo*)BADDR(dosInfoPtr->di_DevInfo);
 				if (devInfoPtr)
 				{
-
 					for (navigator = devInfoPtr;navigator;navigator=BADDR(navigator->dvi_Next))
 					{
-						//if (navigator->dvi_Type==DLT_VOLUME)
 						if (navigator->dvi_Type==flag)
-						{
-							/*BSTR2C(navigator->dvi_Name,tmp);
-							printf("%s\n",tmp);*/
-							BSTR2C(navigator->dvi_Name, volInfoOut[cont++].name) ;	
-							newObj=malloc(sizeof(struct VolumeInfo));
+						{	
+							newObj=(struct VolumeInfo*)malloc(sizeof(struct VolumeInfo));
 							BSTR2C(navigator->dvi_Name,newObj->name);
 							newObj->next=NULL;
 							if (volinfoHead==NULL) volinfoHead=newObj;
@@ -340,4 +328,28 @@ void getVolumeName(const char* fullPath,const int size,char* out)
 		else out[cont]=fullPath[cont];
 	}
 	return ;
+}
+
+// Read stat for a location
+struct Amiga_Statfs* getStatFs(char* path)
+{
+	struct InfoData * FIB;
+	BPTR lock;
+	BOOL success;
+	struct Amiga_Statfs* out=NULL;
+
+	lock = Lock(path, ACCESS_READ);
+	if (lock==0) return NULL;
+	FIB = AllocVec(sizeof(struct FileInfoBlock), MEMF_CLEAR);
+	if (FIB)
+	{
+		success = Info(lock, FIB);
+		out = malloc (sizeof(struct Amiga_Statfs));
+		out->st_blksize=FIB->id_BytesPerBlock;
+		out->st_numblocks=FIB->id_NumBlocks;
+		out->st_numblocksused=FIB->id_NumBlocksUsed;
+		FreeVec(FIB);
+	}
+	UnLock(lock);
+	return out;	
 }

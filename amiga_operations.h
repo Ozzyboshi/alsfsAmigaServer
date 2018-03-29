@@ -25,6 +25,14 @@ struct Amiga_Stat
 	long seconds;
 };
 
+// Data structure to hold information about a filesystem
+struct Amiga_Statfs
+{
+	long st_blksize;
+	long st_numblocks;
+	long st_numblocksused;
+};
+
 
 // Adf file management
 void Amiga_Write_Adf_Track(int ,UBYTE ** ,int );
@@ -37,6 +45,7 @@ int Amiga_Check_FloppyDisk_Presence(int );
 struct ContentInfo* getContentList(char*);
 struct VolumeInfo* getVolumes(const int);
 struct Amiga_Stat* Amiga_Get_Stat(char*);
+struct Amiga_Statfs* getStatFs(char* path);
 
 //Helpers
 void BSTR2C(BSTR,UBYTE*);
