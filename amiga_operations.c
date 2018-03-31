@@ -353,3 +353,21 @@ struct Amiga_Statfs* getStatFs(char* path)
 	UnLock(lock);
 	return out;	
 }
+void Amiga_Simulate_Keypress(const int keycode,const int time,const int updown)
+{
+	volatile UBYTE* boh = (volatile UBYTE*) 0xbfe401;
+	volatile UBYTE* boh2 = (volatile UBYTE*) 0xbfe501;
+	volatile UBYTE* boh3 = (volatile UBYTE*) 0xbfee01;
+	volatile UBYTE* boh4 = (volatile UBYTE*) 0xbfec01;
+
+	Disable();
+	*boh=(UBYTE)time;
+	*boh2=0;
+	*boh3=65;
+	if (updown==0) *boh4=(UBYTE)~((UBYTE)keycode<<1);
+	else *boh4=~(((UBYTE)keycode<<1)+1);
+	Delay(time);
+	Enable();
+
+	
+}

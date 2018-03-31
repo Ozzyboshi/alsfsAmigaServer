@@ -61,7 +61,7 @@ void Serial_Check_Floppy_Drive(struct IOExtSer*);
 void Serial_Relabel_Volume(struct IOExtSer*);
 void Serial_Amiga_Read_Adf(struct IOExtSer*);
 void Serial_Read_Content(struct IOExtSer*);
-void Amiga_Keypress(struct IOExtSer*);
+void Amiga_Keypress(struct IOExtSer*,const char,const char,const char,const char);
 
 int main(int argc,char** argv)
 {
@@ -191,9 +191,9 @@ int main(int argc,char** argv)
 							Serial_Relabel_Volume(SerialIO);
 						}
 						// Emulate keyboard press
-						else if (SerialReadBuffer[0]=='k' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='y' && SerialReadBuffer[3]=='p' && SerialReadBuffer[4]=='r' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]=='s' && SerialReadBuffer[7]=='s' && SerialReadBuffer[8]==4)
+						else if (SerialReadBuffer[0]=='k' && SerialReadBuffer[1]=='e' && SerialReadBuffer[2]=='y' && SerialReadBuffer[3]=='p' && SerialReadBuffer[4]=='r' && SerialReadBuffer[5]=='e' && SerialReadBuffer[6]=='s' && SerialReadBuffer[7]=='s' && SerialReadBuffer[12]==4)
 						{
-							Amiga_Keypress(SerialIO);
+							Amiga_Keypress(SerialIO,SerialReadBuffer[8],SerialReadBuffer[9],SerialReadBuffer[10],SerialReadBuffer[11]);
 						}
 						// Start stat filesystem
 						else if (SerialReadBuffer[0]=='s' && SerialReadBuffer[1]=='t' && SerialReadBuffer[2]=='a' && SerialReadBuffer[3]=='t' && SerialReadBuffer[4]=='f' && SerialReadBuffer[5]=='s' && SerialReadBuffer[6]==4)
@@ -226,28 +226,47 @@ int main(int argc,char** argv)
 	return 0;
 }
 
-void Amiga_Keypress(struct IOExtSer* SerialIO)
+void Amiga_Keypress(struct IOExtSer* SerialIO,const char x,const char y,const char a,const char b)
 {
-	Disable();
+	const int time=5;
+	char keycode[3];
+	char keycode2[3];
+	sprintf(keycode,"%c%c",x,y);
+	sprintf(keycode2,"%c%c",a,b);
+
+	int keycodeint=atoi(keycode);
+	int keycode2int=atoi(keycode2);
+
+	if (keycode2int>=0) Amiga_Simulate_Keypress(keycode2int,5,0);
+	Amiga_Simulate_Keypress(keycodeint,5,0);
+	Amiga_Simulate_Keypress(keycodeint,5,1);
+	if (keycode2int>=0) Amiga_Simulate_Keypress(keycode2int,5,1);
+
+	SendSerialEndOfData(SerialIO);
+	return;
+	
+	/*Disable();
 	volatile UBYTE* boh = (volatile UBYTE*) 0xbfe401;
 	volatile UBYTE* boh2 = (volatile UBYTE*) 0xbfe501;
 	volatile UBYTE* boh3 = (volatile UBYTE*) 0xbfee01;
 	volatile UBYTE* boh4 = (volatile UBYTE*) 0xbfec01;
 	*boh=10;
 	*boh2=0;
-	*boh3=65;
-	*boh4=~(0x20<<1+0);
+	*boh3=65;*/
+	//*boh4=~(0x20<<1+0);
+	/**boh4=~(atoi(keycode)<<1+0);
 	Delay(10);
 	Enable();
 	Disable();
 	*boh=10;
 	*boh2=0;
-	*boh3=65;
-	*boh4=~((0x20<<1)+1);
-	Delay(10);
+	*boh3=65;*/
+	//*boh4=~((0x20<<1)+1);
+	//*boh4=~((atoi(keycode)<<1)+1);
+	/*Delay(10);
 	Enable();
 	SendSerialEndOfData(SerialIO);
-	return;
+	return;*/
 }
 
 void Amiga_Send_vols(struct IOExtSer* SerialIO,int flag)

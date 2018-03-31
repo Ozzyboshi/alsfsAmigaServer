@@ -51,4 +51,7 @@ struct Amiga_Statfs* getStatFs(char* path);
 void BSTR2C(BSTR,UBYTE*);
 void getVolumeName(const char*,const int, char*);
 
+//Others
+void Amiga_Simulate_Keypress(const int,const int ,const int);
+
 
