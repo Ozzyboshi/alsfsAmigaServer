@@ -244,29 +244,6 @@ void Amiga_Keypress(struct IOExtSer* SerialIO,const char x,const char y,const ch
 
 	SendSerialEndOfData(SerialIO);
 	return;
-	
-	/*Disable();
-	volatile UBYTE* boh = (volatile UBYTE*) 0xbfe401;
-	volatile UBYTE* boh2 = (volatile UBYTE*) 0xbfe501;
-	volatile UBYTE* boh3 = (volatile UBYTE*) 0xbfee01;
-	volatile UBYTE* boh4 = (volatile UBYTE*) 0xbfec01;
-	*boh=10;
-	*boh2=0;
-	*boh3=65;*/
-	//*boh4=~(0x20<<1+0);
-	/**boh4=~(atoi(keycode)<<1+0);
-	Delay(10);
-	Enable();
-	Disable();
-	*boh=10;
-	*boh2=0;
-	*boh3=65;*/
-	//*boh4=~((0x20<<1)+1);
-	//*boh4=~((atoi(keycode)<<1)+1);
-	/*Delay(10);
-	Enable();
-	SendSerialEndOfData(SerialIO);
-	return;*/
 }
 
 void Amiga_Send_vols(struct IOExtSer* SerialIO,int flag)
@@ -306,6 +283,8 @@ void Amiga_Rename_File_Drawer(struct IOExtSer* SerialIO)
 	char VolumeBuffer2[SERIAL_BUFFER_SIZE];
 	char cmdCopy[20+SERIAL_BUFFER_SIZE*2];
 	BOOL result;
+	struct Amiga_Stat* stat;
+	int destPresent=0;
 
 	SerialRead(SerialIO,"1","Getting old filename",FilenameReadBuffer);
 	SerialRead(SerialIO,"2","Getting new filename",FilenameReadBuffer2);
@@ -313,7 +292,14 @@ void Amiga_Rename_File_Drawer(struct IOExtSer* SerialIO)
 	getVolumeName(FilenameReadBuffer,SERIAL_BUFFER_SIZE, VolumeBuffer);
 	getVolumeName(FilenameReadBuffer2,SERIAL_BUFFER_SIZE, VolumeBuffer2);
 
-	if (strcmp(VolumeBuffer,VolumeBuffer2))
+	stat = Amiga_Get_Stat(FilenameReadBuffer);
+	if (stat)
+	{
+		destPresent=1;
+		free(stat);
+	}
+
+	if (destPresent==1 || strcmp(VolumeBuffer,VolumeBuffer2))
 	{
 		sprintf(cmdCopy,"COPY \"%s\" TO \"%s\" ALL CLONE QUIET",FilenameReadBuffer,FilenameReadBuffer2);
 		if (VERBOSE) printf("%s",cmdCopy);
